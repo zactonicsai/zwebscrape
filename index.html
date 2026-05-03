@@ -48,45 +48,299 @@
     .modal-content code { background: #f1f5f9; padding: 0.1rem 0.3rem; border-radius: 0.2rem; font-size: 0.9em; }
     .ref-link { color: #2563eb; text-decoration: underline; }
     .ref-link:hover { color: #1d4ed8; }
+
+    /* ============== MOBILE-FIRST NAV SYSTEM ============== */
+    /* Mobile topbar (only visible < lg) */
+    .mobile-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: #0f172a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.7rem 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    @media (min-width: 1024px) { .mobile-topbar { display: none; } }
+
+    /* Hamburger / close button */
+    .nav-icon-btn {
+      background: transparent;
+      border: 0;
+      color: #fff;
+      padding: 0.4rem;
+      cursor: pointer;
+      border-radius: 0.3rem;
+    }
+    .nav-icon-btn:hover { background: rgba(255,255,255,0.08); }
+
+    /* Backdrop (mobile only) */
+    #sidebarBackdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.55);
+      z-index: 39;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    #sidebarBackdrop.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    @media (min-width: 1024px) { #sidebarBackdrop { display: none; } }
+
+    /* Sidebar — desktop: fixed left rail; mobile: slide-in panel */
+    #sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100vh;
+      width: 17rem;
+      max-width: 85vw;
+      background: #0f172a;
+      color: #cbd5e1;
+      padding: 1.25rem;
+      overflow-y: auto;
+      z-index: 40;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      -webkit-overflow-scrolling: touch;
+    }
+    #sidebar.open { transform: translateX(0); }
+    @media (min-width: 1024px) {
+      #sidebar { transform: translateX(0); width: 16rem; }
+    }
+
+    /* Body scroll lock when mobile menu is open */
+    body.menu-open { overflow: hidden; }
+    @media (min-width: 1024px) {
+      body.menu-open { overflow: auto; } /* desktop: never lock */
+    }
+
+    /* Sidebar header (with close button on mobile) */
+    .sidebar-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .sidebar-head .close-btn { display: block; }
+    @media (min-width: 1024px) {
+      .sidebar-head .close-btn { display: none; }
+    }
+
+    /* Collapsible nav groups */
+    .nav-group { margin-bottom: 0.25rem; }
+    .nav-group-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 0.55rem 0.5rem;
+      background: transparent;
+      border: 0;
+      color: #94a3b8;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 0.3rem;
+      text-align: left;
+    }
+    .nav-group-toggle:hover { background: rgba(255,255,255,0.04); color: #cbd5e1; }
+    .nav-group-toggle .chev {
+      display: inline-block;
+      transition: transform 0.2s ease;
+      font-size: 0.6rem;
+      color: #64748b;
+    }
+    .nav-group[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+    .nav-group-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 0.4rem 0;
+      max-height: 1000px;
+      overflow: hidden;
+      transition: max-height 0.25s ease;
+    }
+    .nav-group[aria-expanded="false"] .nav-group-list {
+      max-height: 0;
+    }
+    .nav-group-list a {
+      display: block;
+      padding: 0.45rem 0.6rem 0.45rem 1.1rem;
+      border-left: 2px solid transparent;
+      font-size: 0.86rem;
+      color: #cbd5e1;
+      border-radius: 0 0.25rem 0.25rem 0;
+    }
+    .nav-group-list a:hover { background: rgba(255,255,255,0.05); color: #38bdf8; }
+    .nav-group-list a.active {
+      color: #38bdf8;
+      border-left-color: #38bdf8;
+      background: rgba(56,189,248,0.08);
+    }
+
+    /* Touch-friendly tap targets on mobile */
+    @media (max-width: 1023px) {
+      .nav-group-toggle { padding: 0.75rem 0.5rem; font-size: 0.75rem; }
+      .nav-group-list a { padding-top: 0.65rem; padding-bottom: 0.65rem; }
+    }
+
+    /* Main content responsive padding */
+    main {
+      padding: 1rem;
+    }
+    @media (min-width: 640px)  { main { padding: 1.5rem; } }
+    @media (min-width: 1024px) { main { padding: 2.5rem; margin-left: 16rem; } }
+
+    /* Make every section card breathe correctly on small screens */
+    @media (max-width: 639px) {
+      main section { padding: 1rem !important; }
+      main section h2 { font-size: 1.5rem !important; line-height: 1.25 !important; }
+      main section h3 { font-size: 1.15rem !important; }
+      header h1 { font-size: 1.75rem !important; line-height: 1.2 !important; }
+      header p { font-size: 0.95rem !important; }
+      .badge { font-size: 0.62rem !important; }
+    }
+
+    /* Code blocks must not blow out the viewport */
+    pre[class*="language-"] {
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    @media (max-width: 639px) {
+      pre[class*="language-"], code[class*="language-"] {
+        font-size: 0.72rem;
+      }
+    }
+
+    /* Tables and SVG containers scroll horizontally on small screens */
+    .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+    /* Modal — mobile takes full screen, desktop a centered card */
+    @media (max-width: 639px) {
+      #modal > div {
+        max-width: 100% !important;
+        width: 100% !important;
+        max-height: 100vh !important;
+        height: 100vh !important;
+        border-radius: 0 !important;
+      }
+      #modalContent { padding: 1rem !important; }
+    }
+
+    /* Deep-dive button is easier to tap on mobile */
+    @media (max-width: 639px) {
+      [onclick^="openModal"] { width: 100%; padding: 0.7rem !important; font-size: 0.9rem !important; }
+    }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-800">
 
-<button id="navToggle" class="lg:hidden fixed top-4 left-4 z-50 bg-slate-900 text-white px-3 py-2 rounded shadow">
-  ☰ Menu
-</button>
+<!-- ============== MOBILE TOPBAR (hidden on lg+) ============== -->
+<div class="mobile-topbar">
+  <div class="flex items-center gap-2 min-w-0">
+    <span class="text-base font-semibold truncate">Scraper Tutorial</span>
+  </div>
+  <button id="navToggle" class="nav-icon-btn" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
+</div>
 
-<div class="flex">
-  <nav id="sidebar" class="hidden lg:block fixed top-0 left-0 h-screen w-64 bg-slate-900 text-slate-300 p-5 overflow-y-auto z-40">
-    <h1 class="text-white font-bold text-lg mb-1">Scraper Tutorial</h1>
-    <p class="text-slate-400 text-xs mb-5">Line-by-line, file-by-file</p>
-    <ul class="space-y-1 text-sm">
-      <li><a href="#overview" class="block py-1 px-2 border-l-2 border-transparent">1. Overview</a></li>
-      <li><a href="#compose" class="block py-1 px-2 border-l-2 border-transparent">2. Docker Compose</a></li>
-      <li><a href="#localstack" class="block py-1 px-2 border-l-2 border-transparent">3. LocalStack (S3)</a></li>
-      <li><a href="#playwright" class="block py-1 px-2 border-l-2 border-transparent">4. Playwright Service</a></li>
-      <li class="pt-3 text-slate-500 text-xs uppercase tracking-wider">Go API</li>
-      <li><a href="#go-models" class="block py-1 px-2 border-l-2 border-transparent">5. models.go</a></li>
-      <li><a href="#go-main" class="block py-1 px-2 border-l-2 border-transparent">6. main.go</a></li>
-      <li><a href="#go-handlers" class="block py-1 px-2 border-l-2 border-transparent">7. handlers.go</a></li>
-      <li><a href="#go-scraper" class="block py-1 px-2 border-l-2 border-transparent">8. scraper.go</a></li>
-      <li><a href="#go-storage" class="block py-1 px-2 border-l-2 border-transparent">9. storage.go</a></li>
-      <li><a href="#go-ai" class="block py-1 px-2 border-l-2 border-transparent">10. ai.go</a></li>
-      <li><a href="#go-tests" class="block py-1 px-2 border-l-2 border-transparent">11. api_test.go</a></li>
-      <li><a href="#go-dockerfile" class="block py-1 px-2 border-l-2 border-transparent">12. Dockerfile</a></li>
-      <li class="pt-3 text-slate-500 text-xs uppercase tracking-wider">Frontend</li>
-      <li><a href="#frontend-html" class="block py-1 px-2 border-l-2 border-transparent">13. HTML &amp; Tailwind</a></li>
-      <li><a href="#frontend-js" class="block py-1 px-2 border-l-2 border-transparent">14. Frontend JS</a></li>
-      <li class="pt-3 text-slate-500 text-xs uppercase tracking-wider">AI Stack</li>
-      <li><a href="#chromadb" class="block py-1 px-2 border-l-2 border-transparent">15. ChromaDB</a></li>
-      <li><a href="#ollama" class="block py-1 px-2 border-l-2 border-transparent">16. Ollama &amp; RAG</a></li>
-      <li class="pt-3 text-slate-500 text-xs uppercase tracking-wider">Operations</li>
-      <li><a href="#running" class="block py-1 px-2 border-l-2 border-transparent">17. Running it</a></li>
-      <li><a href="#troubleshooting" class="block py-1 px-2 border-l-2 border-transparent">18. Troubleshooting</a></li>
+<!-- ============== BACKDROP (mobile) ============== -->
+<div id="sidebarBackdrop" aria-hidden="true"></div>
+
+<!-- ============== SIDEBAR ============== -->
+<nav id="sidebar" aria-label="Tutorial sections">
+  <div class="sidebar-head">
+    <div class="min-w-0">
+      <h1 class="text-white font-bold text-lg leading-tight">Scraper Tutorial</h1>
+      <p class="text-slate-400 text-xs mt-0.5">Line-by-line, file-by-file</p>
+    </div>
+    <button id="navClose" class="nav-icon-btn close-btn" aria-label="Close menu">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="nav-group" aria-expanded="true">
+    <button class="nav-group-toggle" type="button">
+      <span>Setup &amp; services</span>
+      <span class="chev">▾</span>
+    </button>
+    <ul class="nav-group-list">
+      <li><a href="#overview">1. Overview</a></li>
+      <li><a href="#compose">2. Docker Compose</a></li>
+      <li><a href="#localstack">3. LocalStack (S3)</a></li>
+      <li><a href="#playwright">4. Playwright Service</a></li>
     </ul>
-  </nav>
+  </div>
 
-  <main class="flex-1 lg:ml-64 p-6 lg:p-10 max-w-5xl">
+  <div class="nav-group" aria-expanded="true">
+    <button class="nav-group-toggle" type="button">
+      <span>Go API</span>
+      <span class="chev">▾</span>
+    </button>
+    <ul class="nav-group-list">
+      <li><a href="#go-models">5. models.go</a></li>
+      <li><a href="#go-main">6. main.go</a></li>
+      <li><a href="#go-handlers">7. handlers.go</a></li>
+      <li><a href="#go-scraper">8. scraper.go</a></li>
+      <li><a href="#go-storage">9. storage.go</a></li>
+      <li><a href="#go-ai">10. ai.go</a></li>
+      <li><a href="#go-tests">11. api_test.go</a></li>
+      <li><a href="#go-dockerfile">12. Dockerfile</a></li>
+    </ul>
+  </div>
+
+  <div class="nav-group" aria-expanded="true">
+    <button class="nav-group-toggle" type="button">
+      <span>Frontend</span>
+      <span class="chev">▾</span>
+    </button>
+    <ul class="nav-group-list">
+      <li><a href="#frontend-html">13. HTML &amp; Tailwind</a></li>
+      <li><a href="#frontend-js">14. Frontend JS</a></li>
+    </ul>
+  </div>
+
+  <div class="nav-group" aria-expanded="true">
+    <button class="nav-group-toggle" type="button">
+      <span>AI Stack</span>
+      <span class="chev">▾</span>
+    </button>
+    <ul class="nav-group-list">
+      <li><a href="#chromadb">15. ChromaDB</a></li>
+      <li><a href="#ollama">16. Ollama &amp; RAG</a></li>
+    </ul>
+  </div>
+
+  <div class="nav-group" aria-expanded="true">
+    <button class="nav-group-toggle" type="button">
+      <span>Operations</span>
+      <span class="chev">▾</span>
+    </button>
+    <ul class="nav-group-list">
+      <li><a href="#running">17. Running it</a></li>
+      <li><a href="#troubleshooting">18. Troubleshooting</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main class="max-w-5xl mx-auto">
 
 <header class="mb-10">
   <h1 class="text-4xl font-bold text-slate-900">Web Scraper Console — Complete Tutorial</h1>
@@ -3693,7 +3947,6 @@ cd api &amp;&amp; go test -v ./...</code></pre>
 
 
   </main>
-</div>
 
 <!-- Modal -->
 <div id="modal" class="hidden fixed inset-0 modal-bg flex items-center justify-center p-4 z-50">
@@ -4463,14 +4716,12 @@ docker compose up --build</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
 
 <script>
+/* ===================== MODAL ===================== */
 const modal = document.getElementById('modal');
 const modalTitle = document.getElementById('modalTitle');
 const modalContent = document.getElementById('modalContent');
 document.getElementById('modalClose').onclick = () => modal.classList.add('hidden');
 modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') modal.classList.add('hidden');
-});
 
 window.openModal = (id) => {
   const tpl = document.getElementById('m-' + id);
@@ -4481,22 +4732,83 @@ window.openModal = (id) => {
   modalContent.scrollTop = 0;
 };
 
-const navLinks = document.querySelectorAll('nav a[href^="#"]');
+/* ===================== SIDEBAR (mobile + desktop) ===================== */
+const sidebar      = document.getElementById('sidebar');
+const backdrop     = document.getElementById('sidebarBackdrop');
+const navToggleBtn = document.getElementById('navToggle');
+const navCloseBtn  = document.getElementById('navClose');
+
+function openSidebar() {
+  sidebar.classList.add('open');
+  backdrop.classList.add('visible');
+  document.body.classList.add('menu-open');
+  navToggleBtn.setAttribute('aria-expanded', 'true');
+}
+function closeSidebar() {
+  sidebar.classList.remove('open');
+  backdrop.classList.remove('visible');
+  document.body.classList.remove('menu-open');
+  navToggleBtn.setAttribute('aria-expanded', 'false');
+}
+navToggleBtn.addEventListener('click', () => {
+  if (sidebar.classList.contains('open')) closeSidebar(); else openSidebar();
+});
+navCloseBtn.addEventListener('click', closeSidebar);
+backdrop.addEventListener('click', closeSidebar);
+
+/* Close mobile menu when a nav link is tapped */
+document.querySelectorAll('#sidebar .nav-group-list a').forEach(a => {
+  a.addEventListener('click', () => {
+    if (window.matchMedia('(max-width: 1023px)').matches) closeSidebar();
+  });
+});
+
+/* Reset sidebar state when crossing the lg breakpoint */
+window.matchMedia('(min-width: 1024px)').addEventListener('change', (e) => {
+  if (e.matches) {
+    sidebar.classList.remove('open');
+    backdrop.classList.remove('visible');
+    document.body.classList.remove('menu-open');
+  }
+});
+
+/* Esc closes whichever overlay is open (modal first, then sidebar) */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!modal.classList.contains('hidden')) {
+    modal.classList.add('hidden');
+  } else if (sidebar.classList.contains('open')) {
+    closeSidebar();
+  }
+});
+
+/* ===================== COLLAPSIBLE NAV GROUPS ===================== */
+document.querySelectorAll('.nav-group-toggle').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const group = btn.closest('.nav-group');
+    const expanded = group.getAttribute('aria-expanded') !== 'false';
+    group.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+  });
+});
+
+/* ===================== SCROLLSPY ===================== */
+const navLinks = document.querySelectorAll('#sidebar .nav-group-list a');
 const observer = new IntersectionObserver((entries) => {
   entries.forEach(e => {
     if (e.isIntersecting) {
       navLinks.forEach(l => l.classList.remove('active'));
-      const link = document.querySelector(`nav a[href="#${e.target.id}"]`);
-      if (link) link.classList.add('active');
+      const link = document.querySelector(`#sidebar a[href="#${e.target.id}"]`);
+      if (link) {
+        link.classList.add('active');
+        /* Auto-expand the parent group so the active link is visible */
+        const grp = link.closest('.nav-group');
+        if (grp) grp.setAttribute('aria-expanded', 'true');
+      }
     }
   });
 }, { rootMargin: '-20% 0px -70% 0px' });
 
 document.querySelectorAll('main section[id]').forEach(s => observer.observe(s));
-
-document.getElementById('navToggle').onclick = () => {
-  document.getElementById('sidebar').classList.toggle('hidden');
-};
 </script>
 
 </body>
