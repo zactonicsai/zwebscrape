@@ -396,6 +396,7 @@ async function viewScan(id, silent = false) {
           <table class="w-full text-sm">
             <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
+                <th class="px-3 py-2">Preview</th>
                 <th class="px-3 py-2">URL</th>
                 <th class="px-3 py-2 text-right">Depth</th>
                 <th class="px-3 py-2 text-right">Clicks</th>
@@ -409,28 +410,38 @@ async function viewScan(id, silent = false) {
             <tbody class="divide-y divide-slate-100">
               ${pages.map(p => `
                 <tr class="hover:bg-slate-50">
-                  <td class="px-3 py-2">
+                  <td class="px-3 py-2 align-top">
+                    ${p.screenshot_s3_key
+                      ? `<button class="block group" title="Click to enlarge"
+                          onclick='viewFile(${JSON.stringify(id)}, ${JSON.stringify(encodeURIComponent(p.screenshot_s3_key))}, ${JSON.stringify("Screenshot — " + p.url)})'>
+                          <img src="${API}/api/scrapes/${id}/file?key=${encodeURIComponent(p.screenshot_s3_key)}"
+                               class="w-24 h-16 object-cover object-top border border-slate-200 rounded group-hover:border-blue-400"
+                               loading="lazy" alt="screenshot">
+                        </button>`
+                      : `<div class="w-24 h-16 bg-slate-100 border border-dashed border-slate-300 rounded flex items-center justify-center text-xs text-slate-400">no shot</div>`}
+                  </td>
+                  <td class="px-3 py-2 align-top">
                     <div class="font-medium text-slate-900 truncate-mid" title="${escapeHtml(p.url)}">${escapeHtml(p.url)}</div>
                     <div class="text-xs text-slate-500 truncate-mid">${escapeHtml(p.title || '')}</div>
                   </td>
-                  <td class="px-3 py-2 text-right">${p.depth}</td>
-                  <td class="px-3 py-2 text-right">
+                  <td class="px-3 py-2 text-right align-top">${p.depth}</td>
+                  <td class="px-3 py-2 text-right align-top">
                     ${p.click_count ?
                       `<button class="text-blue-700 hover:underline" onclick="viewPage('${id}','${p.id}')">${p.click_count}</button>` :
                       '0'}
                   </td>
-                  <td class="px-3 py-2 text-right text-xs text-slate-500">${fmtBytes(p.html_bytes)}</td>
-                  <td class="px-3 py-2 text-right text-xs text-slate-500">${fmtBytes(p.text_bytes)}</td>
-                  <td class="px-3 py-2 text-right text-xs text-slate-500">${fmtBytes(p.screenshot_bytes)}</td>
-                  <td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">${fmtDate(p.scraped_at)}</td>
-                  <td class="px-3 py-2">
-                    <div class="flex gap-1">
+                  <td class="px-3 py-2 text-right text-xs text-slate-500 align-top">${fmtBytes(p.html_bytes)}</td>
+                  <td class="px-3 py-2 text-right text-xs text-slate-500 align-top">${fmtBytes(p.text_bytes)}</td>
+                  <td class="px-3 py-2 text-right text-xs text-slate-500 align-top">${fmtBytes(p.screenshot_bytes)}</td>
+                  <td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap align-top">${fmtDate(p.scraped_at)}</td>
+                  <td class="px-3 py-2 align-top">
+                    <div class="flex flex-wrap gap-1">
                       ${p.html_s3_key ? `<button class="bg-pink-100 hover:bg-pink-200 text-pink-800 px-2 py-1 rounded text-xs"
-                        onclick="viewFile('${id}','${encodeURIComponent(p.html_s3_key)}','HTML — '+${JSON.stringify(p.url)})">HTML</button>` : ''}
+                        onclick='viewFile(${JSON.stringify(id)}, ${JSON.stringify(encodeURIComponent(p.html_s3_key))}, ${JSON.stringify("Page — " + p.url)})'>Page</button>` : ''}
                       ${p.text_s3_key ? `<button class="bg-cyan-100 hover:bg-cyan-200 text-cyan-800 px-2 py-1 rounded text-xs"
-                        onclick="viewFile('${id}','${encodeURIComponent(p.text_s3_key)}','Text — '+${JSON.stringify(p.url)})">Text</button>` : ''}
+                        onclick='viewFile(${JSON.stringify(id)}, ${JSON.stringify(encodeURIComponent(p.text_s3_key))}, ${JSON.stringify("Text — " + p.url)})'>Text</button>` : ''}
                       ${p.screenshot_s3_key ? `<button class="bg-amber-100 hover:bg-amber-200 text-amber-800 px-2 py-1 rounded text-xs"
-                        onclick="viewFile('${id}','${encodeURIComponent(p.screenshot_s3_key)}','Screenshot — '+${JSON.stringify(p.url)})">PNG</button>` : ''}
+                        onclick='viewFile(${JSON.stringify(id)}, ${JSON.stringify(encodeURIComponent(p.screenshot_s3_key))}, ${JSON.stringify("Screenshot — " + p.url)})'>Image</button>` : ''}
                     </div>
                   </td>
                 </tr>`).join('')}

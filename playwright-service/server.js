@@ -98,6 +98,20 @@ app.post('/scrape', async (req, res) => {
     const initial = await captureState(page);
     const links = await collectLinks(page);
 
+    // Take the screenshot of the INITIAL page state right now, before the
+    // click loop possibly navigates away. Doing this after clicking was
+    // unreliable — restoration could fail and leave us screenshotting an
+    // unrelated post-click DOM.
+    let screenshotB64 = null;
+    if (screenshot) {
+      try {
+        const buf = await page.screenshot({ fullPage: true, type: 'png' });
+        screenshotB64 = buf.toString('base64');
+      } catch (e) {
+        console.warn('initial screenshot failed:', e.message);
+      }
+    }
+
     let clicks = [];
     if (click_buttons) {
       clicks = await clickAllButtons(page, url, max_clicks, timeout);
@@ -111,13 +125,8 @@ app.post('/scrape', async (req, res) => {
       links,
       clicks
     };
-    if (screenshot) {
-      try {
-        const buf = await page.screenshot({ fullPage: true, type: 'png' });
-        result.screenshot = buf.toString('base64');
-      } catch (e) {
-        // Screenshot on a navigated/destroyed page can fail — non-fatal
-      }
+    if (screenshotB64) {
+      result.screenshot = screenshotB64;
     }
 
     console.log(`scrape ${url} -> ${clicks.length} clicks in ${Date.now()-t0}ms`);

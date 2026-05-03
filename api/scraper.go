@@ -37,10 +37,14 @@ func NewScraper(cfg Config, storage *Storage, db *DB, ai *AI) *Scraper {
 	}
 }
 
-// Run executes a scan. Updates the DB row in place. After completion, if
-// AUTO_INDEX is true, kicks off the indexing pass.
+// Run executes a scan. Updates the DB row in place. With AUTO_INDEX=true (the
+// default) each page is indexed into ChromaDB immediately after it's stored,
+// so the chunks_indexed counter ticks up in lockstep with page_count.
 func (s *Scraper) Run(ctx context.Context, scan *Scan) {
 	_ = s.db.UpdateScanStatus(ctx, scan.ID, "running", "")
+	if s.cfg.AutoIndex {
+		_ = s.db.MarkIndexingStart(ctx, scan.ID)
+	}
 
 	seed, err := url.Parse(scan.SeedURL)
 	if err != nil {
@@ -60,6 +64,7 @@ func (s *Scraper) Run(ctx context.Context, scan *Scan) {
 	const maxPages = 50
 	pageCount := 0
 	clickCount := 0
+	totalChunks := 0
 
 	for len(queue) > 0 && pageCount < maxPages {
 		item := queue[0]
@@ -70,21 +75,33 @@ func (s *Scraper) Run(ctx context.Context, scan *Scan) {
 		}
 		visited[item.url] = true
 
-		// Surface "currently scraping <url>" to the UI before we start the fetch
+		// Surface "currently scraping <url>" before the fetch starts
 		_ = s.db.SetCurrentURL(ctx, scan.ID, item.url)
 
-		links, clicks, err := s.fetchAndStorePage(ctx, scan, item.url, item.depth)
+		page, clicks, links, err := s.fetchAndStorePage(ctx, scan, item.url, item.depth)
 		if err != nil {
 			log.Printf("scan %s: fetch %s: %v", scan.ID, item.url, err)
 			continue
 		}
 		pageCount++
-		clickCount += clicks
+		clickCount += len(clicks)
 
-		// Live progress: update page_count + click_count after EVERY page so
-		// the table & file browser tick up in real time.
+		// Live progress: bump page_count + click_count after EVERY page
 		if err := s.db.BumpScanProgress(ctx, scan.ID, pageCount, clickCount); err != nil {
 			log.Printf("scan %s: bump progress: %v", scan.ID, err)
+		}
+
+		// Index this page (and its click-state texts) RIGHT NOW, so chunks_indexed
+		// ticks up alongside page_count rather than waiting for the whole scan.
+		if s.cfg.AutoIndex {
+			n, ierr := s.indexPage(ctx, scan.ID, page, clicks)
+			if ierr != nil {
+				log.Printf("scan %s: index page %s: %v", scan.ID, page.URL, ierr)
+			}
+			totalChunks += n
+			if err := s.db.BumpIndexProgress(ctx, scan.ID, totalChunks); err != nil {
+				log.Printf("scan %s: bump index progress: %v", scan.ID, err)
+			}
 		}
 
 		// Enqueue same-host links if depth permits
@@ -107,14 +124,19 @@ func (s *Scraper) Run(ctx context.Context, scan *Scan) {
 		log.Printf("scan %s: mark completed: %v", scan.ID, err)
 	}
 
+	// Stamp the final indexing total + indexed_at when inline indexing was on
 	if s.cfg.AutoIndex {
-		s.autoIndex(ctx, scan.ID)
+		if err := s.db.MarkScanIndexed(ctx, scan.ID, totalChunks); err != nil {
+			log.Printf("scan %s: mark indexed: %v", scan.ID, err)
+		}
+		log.Printf("scan %s: inline-indexed %d chunks across %d pages", scan.ID, totalChunks, pageCount)
 	}
 }
 
 // fetchAndStorePage renders one URL via playwright, persists everything to S3
-// and Postgres, and returns the links discovered + click count.
-func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL string, depth int) ([]string, int, error) {
+// and Postgres, and returns the persisted *Page, the persisted ClickStates,
+// and the links discovered for further BFS traversal.
+func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL string, depth int) (*Page, []ClickState, []string, error) {
 	body, _ := json.Marshal(map[string]any{
 		"url":           pageURL,
 		"screenshot":    true,
@@ -126,30 +148,30 @@ func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL str
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		s.cfg.PlaywrightURL+"/scrape", bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.http.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, nil, err
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, 0, fmt.Errorf("playwright %d: %s", resp.StatusCode, string(raw))
+		return nil, nil, nil, fmt.Errorf("playwright %d: %s", resp.StatusCode, string(raw))
 	}
 
 	var pr PlaywrightResp
 	if err := json.Unmarshal(raw, &pr); err != nil {
-		return nil, 0, fmt.Errorf("decode playwright: %w", err)
+		return nil, nil, nil, fmt.Errorf("decode playwright: %w", err)
 	}
 	if pr.Error != "" {
-		return nil, 0, fmt.Errorf("playwright: %s", pr.Error)
+		return nil, nil, nil, fmt.Errorf("playwright: %s", pr.Error)
 	}
 
 	pageID := uuid.NewString()
@@ -164,7 +186,7 @@ func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL str
 		ScrapedAt:  time.Now().UTC(),
 	}
 
-	// Always store HTML if we got it
+	// Always store HTML
 	if len(pr.HTML) > 0 {
 		key := fmt.Sprintf("scans/%s/pages/%s.html", scan.ID, pageID)
 		if err := s.storage.Put(ctx, key, []byte(pr.HTML), "text/html; charset=utf-8"); err == nil {
@@ -172,7 +194,7 @@ func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL str
 			page.HTMLBytes = int64(len(pr.HTML))
 		}
 	}
-	// Always store text if we got it
+	// Always store text
 	if len(pr.Text) > 0 {
 		key := fmt.Sprintf("scans/%s/pages/%s.txt", scan.ID, pageID)
 		if err := s.storage.Put(ctx, key, []byte(pr.Text), "text/plain; charset=utf-8"); err == nil {
@@ -180,7 +202,7 @@ func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL str
 			page.TextBytes = int64(len(pr.Text))
 		}
 	}
-	// Screenshot is optional; user has to opt in via format=all/screenshot
+	// Screenshot when format permits (default "all" includes it)
 	if pr.Screenshot != "" && (scan.Format == "all" || scan.Format == "screenshot") {
 		if data, derr := base64.StdEncoding.DecodeString(pr.Screenshot); derr == nil {
 			key := fmt.Sprintf("scans/%s/pages/%s.png", scan.ID, pageID)
@@ -192,13 +214,14 @@ func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL str
 	}
 
 	if err := s.db.InsertPage(ctx, page); err != nil {
-		return nil, 0, fmt.Errorf("insert page: %w", err)
+		return nil, nil, nil, fmt.Errorf("insert page: %w", err)
 	}
 
-	// Persist each click state
+	// Persist each click state and collect them for inline indexing
+	persisted := make([]ClickState, 0, len(pr.Clicks))
 	for _, c := range pr.Clicks {
 		clickID := uuid.NewString()
-		cs := &ClickState{
+		cs := ClickState{
 			ID:         clickID,
 			PageID:     pageID,
 			ScanID:     scan.ID,
@@ -219,12 +242,76 @@ func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL str
 				cs.TextS3Key = key
 			}
 		}
-		if err := s.db.InsertClickState(ctx, cs); err != nil {
+		if err := s.db.InsertClickState(ctx, &cs); err != nil {
 			log.Printf("scan %s: insert click state: %v", scan.ID, err)
+			continue
+		}
+		persisted = append(persisted, cs)
+	}
+
+	return page, persisted, pr.Links, nil
+}
+
+// indexPage chunks the freshly-stored page text + each click-state's text and
+// pushes them into ChromaDB. Returns the number of chunks indexed.
+// Called inline from Run() after each page is stored.
+func (s *Scraper) indexPage(ctx context.Context, scanID string, page *Page, clicks []ClickState) (int, error) {
+	indexed := 0
+
+	// Page text
+	if page.TextS3Key != "" {
+		data, _, err := s.storage.Get(ctx, page.TextS3Key)
+		if err == nil {
+			chunks := ChunkText(string(data), 1500)
+			for i, ch := range chunks {
+				docID := fmt.Sprintf("%s::%s::%d", scanID, page.ID, i)
+				meta := map[string]string{
+					"scan_id": scanID,
+					"page_id": page.ID,
+					"url":     page.URL,
+					"title":   page.Title,
+					"chunk":   fmt.Sprintf("%d", i),
+					"kind":    "page",
+				}
+				if err := s.ai.IndexDoc(ctx, docID, ch, meta); err != nil {
+					log.Printf("scan %s: index page chunk: %v", scanID, err)
+					continue
+				}
+				indexed++
+			}
 		}
 	}
 
-	return pr.Links, len(pr.Clicks), nil
+	// Click-state texts
+	for _, c := range clicks {
+		if c.TextS3Key == "" {
+			continue
+		}
+		cdata, _, err := s.storage.Get(ctx, c.TextS3Key)
+		if err != nil {
+			continue
+		}
+		chunks := ChunkText(string(cdata), 1500)
+		for i, ch := range chunks {
+			docID := fmt.Sprintf("%s::%s::click-%d::%d", scanID, page.ID, c.Step, i)
+			meta := map[string]string{
+				"scan_id":  scanID,
+				"page_id":  page.ID,
+				"click_id": c.ID,
+				"url":      page.URL,
+				"title":    page.Title + " (after click: " + c.Label + ")",
+				"chunk":    fmt.Sprintf("%d", i),
+				"kind":     "click",
+			}
+			if err := s.ai.IndexDoc(ctx, docID, ch, meta); err != nil {
+				log.Printf("scan %s: index click chunk: %v", scanID, err)
+				continue
+			}
+			indexed++
+		}
+	}
+
+	return indexed, nil
 }
 
 // autoIndex pulls every page's text + every click-state's text from S3, chunks
