@@ -21,7 +21,7 @@ type AI struct {
 func NewAI(cfg Config) *AI {
 	return &AI{
 		cfg:  cfg,
-		http: &http.Client{Timeout: 120 * time.Minute},
+		http: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -172,7 +172,7 @@ func (a *AI) QueryChunks(ctx context.Context, prompt string, topK int, jobFilter
 		"n_results":        topK,
 	}
 	if jobFilter != "" {
-		payload["where"] = map[string]any{"job_id": jobFilter}
+		payload["where"] = map[string]any{"scan_id": jobFilter}
 	}
 
 	body, _ := json.Marshal(payload)
@@ -196,8 +196,8 @@ func (a *AI) QueryChunks(ctx context.Context, prompt string, topK int, jobFilter
 
 	// Chroma returns nested arrays: documents[[...]]
 	var out struct {
-		Documents [][]string         `json:"documents"`
-		Metadatas [][]map[string]any `json:"metadatas"`
+		Documents [][]string           `json:"documents"`
+		Metadatas [][]map[string]any   `json:"metadatas"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, nil, err

@@ -1,11 +1,15 @@
 FROM golang:1.22-alpine AS build
 
 WORKDIR /src
-COPY go.mod ./
-RUN go mod download 2>/dev/null || true
 
+# Cache deps in their own layer
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy sources (Go files plus the embedded migrations.sql)
 COPY *.go ./
-RUN go mod tidy
+COPY *.sql ./
+
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/api .
 
 FROM alpine:3.20

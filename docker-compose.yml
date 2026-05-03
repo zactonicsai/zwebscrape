@@ -15,11 +15,19 @@ services:
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=llama3.2
       - OLLAMA_EMBED_MODEL=nomic-embed-text
+      - DATABASE_URL=postgres://scraper:scraper@postgres:5432/scraper?sslmode=disable
+      - AUTO_INDEX=true
     depends_on:
-      - playwright
-      - localstack
-      - chromadb
-      - ollama
+      postgres:
+        condition: service_healthy
+      playwright:
+        condition: service_started
+      localstack:
+        condition: service_started
+      chromadb:
+        condition: service_started
+      ollama:
+        condition: service_started
     networks:
       - scraper-net
 
@@ -38,6 +46,25 @@ services:
       - "8000:80"
     depends_on:
       - api
+    networks:
+      - scraper-net
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: scraper-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=scraper
+      - POSTGRES_PASSWORD=scraper
+      - POSTGRES_DB=scraper
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scraper -d scraper"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     networks:
       - scraper-net
 
@@ -96,6 +123,7 @@ services:
 volumes:
   chroma-data:
   ollama-data:
+  postgres-data:
 
 networks:
   scraper-net:

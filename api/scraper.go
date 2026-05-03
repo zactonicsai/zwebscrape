@@ -16,30 +16,35 @@ import (
 	"github.com/google/uuid"
 )
 
-// Scraper performs BFS web crawl up to a configured depth
+// Scraper performs BFS web crawl up to a configured depth.
+// It calls the playwright service's /scrape endpoint, which renders the page,
+// clicks every interactive element, and returns the resulting state(s).
 type Scraper struct {
 	cfg     Config
 	storage *Storage
+	db      *DB
+	ai      *AI
 	http    *http.Client
 }
 
-func NewScraper(cfg Config, storage *Storage) *Scraper {
+func NewScraper(cfg Config, storage *Storage, db *DB, ai *AI) *Scraper {
 	return &Scraper{
 		cfg:     cfg,
 		storage: storage,
-		http:    &http.Client{Timeout: 90 * time.Second},
+		db:      db,
+		ai:      ai,
+		http:    &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
-// Run executes a job, blocking until complete. Updates job in place.
-func (s *Scraper) Run(ctx context.Context, job *ScrapeJob) {
-	job.Status = "running"
-	job.UpdatedAt = time.Now().UTC()
+// Run executes a scan. Updates the DB row in place. After completion, if
+// AUTO_INDEX is true, kicks off the indexing pass.
+func (s *Scraper) Run(ctx context.Context, scan *Scan) {
+	_ = s.db.UpdateScanStatus(ctx, scan.ID, "running", "")
 
-	seed, err := url.Parse(job.SeedURL)
+	seed, err := url.Parse(scan.SeedURL)
 	if err != nil {
-		job.Status = "failed"
-		job.Error = "invalid seed url: " + err.Error()
+		_ = s.db.MarkScanCompleted(ctx, scan.ID, 0, 0, "invalid seed url: "+err.Error())
 		return
 	}
 	seedHost := seed.Host
@@ -50,12 +55,13 @@ func (s *Scraper) Run(ctx context.Context, job *ScrapeJob) {
 	}
 
 	visited := map[string]bool{}
-	queue := []queueItem{{url: job.SeedURL, depth: 0}}
+	queue := []queueItem{{url: scan.SeedURL, depth: 0}}
 
-	// Cap total pages to keep demo bounded
 	const maxPages = 50
+	pageCount := 0
+	clickCount := 0
 
-	for len(queue) > 0 && len(job.Pages) < maxPages {
+	for len(queue) > 0 && pageCount < maxPages {
 		item := queue[0]
 		queue = queue[1:]
 
@@ -64,23 +70,28 @@ func (s *Scraper) Run(ctx context.Context, job *ScrapeJob) {
 		}
 		visited[item.url] = true
 
-		page, links, err := s.fetchAndStore(ctx, job, item.url, item.depth)
+		// Surface "currently scraping <url>" to the UI before we start the fetch
+		_ = s.db.SetCurrentURL(ctx, scan.ID, item.url)
+
+		links, clicks, err := s.fetchAndStorePage(ctx, scan, item.url, item.depth)
 		if err != nil {
-			log.Printf("fetch %s: %v", item.url, err)
+			log.Printf("scan %s: fetch %s: %v", scan.ID, item.url, err)
 			continue
 		}
-		job.Pages = append(job.Pages, page)
-		job.UpdatedAt = time.Now().UTC()
+		pageCount++
+		clickCount += clicks
+
+		// Live progress: update page_count + click_count after EVERY page so
+		// the table & file browser tick up in real time.
+		if err := s.db.BumpScanProgress(ctx, scan.ID, pageCount, clickCount); err != nil {
+			log.Printf("scan %s: bump progress: %v", scan.ID, err)
+		}
 
 		// Enqueue same-host links if depth permits
-		if item.depth < job.Depth {
+		if item.depth < scan.Depth {
 			for _, link := range links {
 				lu, err := url.Parse(link)
-				if err != nil {
-					continue
-				}
-				// Stay on the same host; strip fragments
-				if lu.Host != seedHost {
+				if err != nil || lu.Host != seedHost {
 					continue
 				}
 				lu.Fragment = ""
@@ -92,88 +103,212 @@ func (s *Scraper) Run(ctx context.Context, job *ScrapeJob) {
 		}
 	}
 
-	job.Status = "done"
-	job.UpdatedAt = time.Now().UTC()
+	if err := s.db.MarkScanCompleted(ctx, scan.ID, pageCount, clickCount, ""); err != nil {
+		log.Printf("scan %s: mark completed: %v", scan.ID, err)
+	}
+
+	if s.cfg.AutoIndex {
+		s.autoIndex(ctx, scan.ID)
+	}
 }
 
-// fetchAndStore renders one URL, stores output to S3, and returns links for further traversal
-func (s *Scraper) fetchAndStore(ctx context.Context, job *ScrapeJob, pageURL string, depth int) (ScrapePage, []string, error) {
-	wantScreenshot := job.Format == "screenshot"
-
+// fetchAndStorePage renders one URL via playwright, persists everything to S3
+// and Postgres, and returns the links discovered + click count.
+func (s *Scraper) fetchAndStorePage(ctx context.Context, scan *Scan, pageURL string, depth int) ([]string, int, error) {
 	body, _ := json.Marshal(map[string]any{
-		"url":        pageURL,
-		"screenshot": wantScreenshot,
-		"timeout":    30000,
+		"url":           pageURL,
+		"screenshot":    true,
+		"click_buttons": scan.ClickButtons,
+		"max_clicks":    20,
+		"timeout":       45000,
 	})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		s.cfg.PlaywrightURL+"/render", bytes.NewReader(body))
+		s.cfg.PlaywrightURL+"/scrape", bytes.NewReader(body))
 	if err != nil {
-		return ScrapePage{}, nil, err
+		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.http.Do(req)
 	if err != nil {
-		return ScrapePage{}, nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return ScrapePage{}, nil, err
+		return nil, 0, err
 	}
 	if resp.StatusCode >= 400 {
-		return ScrapePage{}, nil, fmt.Errorf("playwright %d: %s", resp.StatusCode, string(raw))
+		return nil, 0, fmt.Errorf("playwright %d: %s", resp.StatusCode, string(raw))
 	}
 
 	var pr PlaywrightResp
 	if err := json.Unmarshal(raw, &pr); err != nil {
-		return ScrapePage{}, nil, fmt.Errorf("decode playwright: %w", err)
+		return nil, 0, fmt.Errorf("decode playwright: %w", err)
+	}
+	if pr.Error != "" {
+		return nil, 0, fmt.Errorf("playwright: %s", pr.Error)
 	}
 
 	pageID := uuid.NewString()
-	var key, contentType string
-	var data []byte
+	page := &Page{
+		ID:         pageID,
+		ScanID:     scan.ID,
+		URL:        pr.URL,
+		Title:      strings.TrimSpace(pr.Title),
+		Depth:      depth,
+		StatusCode: 200,
+		ClickCount: len(pr.Clicks),
+		ScrapedAt:  time.Now().UTC(),
+	}
 
-	switch job.Format {
-	case "screenshot":
-		key = fmt.Sprintf("jobs/%s/pages/%s.png", job.ID, pageID)
-		contentType = "image/png"
-		data, err = base64.StdEncoding.DecodeString(pr.Screenshot)
-		if err != nil {
-			return ScrapePage{}, nil, fmt.Errorf("decode screenshot: %w", err)
+	// Always store HTML if we got it
+	if len(pr.HTML) > 0 {
+		key := fmt.Sprintf("scans/%s/pages/%s.html", scan.ID, pageID)
+		if err := s.storage.Put(ctx, key, []byte(pr.HTML), "text/html; charset=utf-8"); err == nil {
+			page.HTMLS3Key = key
+			page.HTMLBytes = int64(len(pr.HTML))
 		}
-	case "html":
-		key = fmt.Sprintf("jobs/%s/pages/%s.html", job.ID, pageID)
-		contentType = "text/html; charset=utf-8"
-		data = []byte(pr.HTML)
-	default: // "text"
-		key = fmt.Sprintf("jobs/%s/pages/%s.txt", job.ID, pageID)
-		contentType = "text/plain; charset=utf-8"
-		// Always store text alongside, even when format is text
-		data = []byte(pr.Text)
+	}
+	// Always store text if we got it
+	if len(pr.Text) > 0 {
+		key := fmt.Sprintf("scans/%s/pages/%s.txt", scan.ID, pageID)
+		if err := s.storage.Put(ctx, key, []byte(pr.Text), "text/plain; charset=utf-8"); err == nil {
+			page.TextS3Key = key
+			page.TextBytes = int64(len(pr.Text))
+		}
+	}
+	// Screenshot is optional; user has to opt in via format=all/screenshot
+	if pr.Screenshot != "" && (scan.Format == "all" || scan.Format == "screenshot") {
+		if data, derr := base64.StdEncoding.DecodeString(pr.Screenshot); derr == nil {
+			key := fmt.Sprintf("scans/%s/pages/%s.png", scan.ID, pageID)
+			if err := s.storage.Put(ctx, key, data, "image/png"); err == nil {
+				page.ScreenshotS3Key = key
+				page.ScreenshotBytes = int64(len(data))
+			}
+		}
 	}
 
-	if err := s.storage.Put(ctx, key, data, contentType); err != nil {
-		return ScrapePage{}, nil, err
+	if err := s.db.InsertPage(ctx, page); err != nil {
+		return nil, 0, fmt.Errorf("insert page: %w", err)
 	}
 
-	// For non-text formats, also stash a parallel text version so the
-	// AI indexer always has clean text to work with.
-	if job.Format != "text" {
-		textKey := fmt.Sprintf("jobs/%s/pages/%s.txt", job.ID, pageID)
-		_ = s.storage.Put(ctx, textKey, []byte(pr.Text), "text/plain; charset=utf-8")
+	// Persist each click state
+	for _, c := range pr.Clicks {
+		clickID := uuid.NewString()
+		cs := &ClickState{
+			ID:         clickID,
+			PageID:     pageID,
+			ScanID:     scan.ID,
+			Step:       c.Step,
+			Selector:   c.Selector,
+			Label:      c.Label,
+			CapturedAt: time.Now().UTC(),
+		}
+		if c.HTML != "" {
+			key := fmt.Sprintf("scans/%s/pages/%s/clicks/%03d.html", scan.ID, pageID, c.Step)
+			if err := s.storage.Put(ctx, key, []byte(c.HTML), "text/html; charset=utf-8"); err == nil {
+				cs.HTMLS3Key = key
+			}
+		}
+		if c.Text != "" {
+			key := fmt.Sprintf("scans/%s/pages/%s/clicks/%03d.txt", scan.ID, pageID, c.Step)
+			if err := s.storage.Put(ctx, key, []byte(c.Text), "text/plain; charset=utf-8"); err == nil {
+				cs.TextS3Key = key
+			}
+		}
+		if err := s.db.InsertClickState(ctx, cs); err != nil {
+			log.Printf("scan %s: insert click state: %v", scan.ID, err)
+		}
 	}
 
-	page := ScrapePage{
-		URL:    pr.URL,
-		Title:  strings.TrimSpace(pr.Title),
-		S3Key:  key,
-		Depth:  depth,
-		Format: job.Format,
-		Bytes:  len(data),
+	return pr.Links, len(pr.Clicks), nil
+}
+
+// autoIndex pulls every page's text + every click-state's text from S3, chunks
+// it, and indexes it into ChromaDB. Updates the scan row with the chunk count
+// after every page so the UI's "Indexed N chunks" badge ticks up live.
+func (s *Scraper) autoIndex(ctx context.Context, scanID string) {
+	if err := s.db.MarkIndexingStart(ctx, scanID); err != nil {
+		log.Printf("scan %s: mark indexing start: %v", scanID, err)
 	}
 
-	return page, pr.Links, nil
+	pages, err := s.db.ListPages(ctx, scanID)
+	if err != nil {
+		log.Printf("scan %s: list pages: %v", scanID, err)
+		_ = s.db.MarkIndexingFailed(ctx, scanID, "list pages: "+err.Error())
+		return
+	}
+
+	indexed := 0
+	for _, p := range pages {
+		// Tell the UI which URL is currently being indexed
+		_ = s.db.SetCurrentURL(ctx, scanID, p.URL)
+
+		if p.TextS3Key != "" {
+			data, _, err := s.storage.Get(ctx, p.TextS3Key)
+			if err == nil {
+				chunks := ChunkText(string(data), 1500)
+				for i, ch := range chunks {
+					docID := fmt.Sprintf("%s::%s::%d", scanID, p.ID, i)
+					meta := map[string]string{
+						"scan_id": scanID,
+						"page_id": p.ID,
+						"url":     p.URL,
+						"title":   p.Title,
+						"chunk":   fmt.Sprintf("%d", i),
+						"kind":    "page",
+					}
+					if err := s.ai.IndexDoc(ctx, docID, ch, meta); err != nil {
+						log.Printf("scan %s: index page chunk: %v", scanID, err)
+						continue
+					}
+					indexed++
+				}
+			}
+		}
+
+		// Also index click-state text so queries can match clicked-state content
+		clicks, _ := s.db.ListClicksForPage(ctx, p.ID)
+		for _, c := range clicks {
+			if c.TextS3Key == "" {
+				continue
+			}
+			cdata, _, err := s.storage.Get(ctx, c.TextS3Key)
+			if err != nil {
+				continue
+			}
+			chunks := ChunkText(string(cdata), 1500)
+			for i, ch := range chunks {
+				docID := fmt.Sprintf("%s::%s::click-%d::%d", scanID, p.ID, c.Step, i)
+				meta := map[string]string{
+					"scan_id":  scanID,
+					"page_id":  p.ID,
+					"click_id": c.ID,
+					"url":      p.URL,
+					"title":    p.Title + " (after click: " + c.Label + ")",
+					"chunk":    fmt.Sprintf("%d", i),
+					"kind":     "click",
+				}
+				if err := s.ai.IndexDoc(ctx, docID, ch, meta); err != nil {
+					log.Printf("scan %s: index click chunk: %v", scanID, err)
+					continue
+				}
+				indexed++
+			}
+		}
+
+		// Live progress checkpoint after each page (not each chunk to avoid
+		// hammering the DB)
+		if err := s.db.BumpIndexProgress(ctx, scanID, indexed); err != nil {
+			log.Printf("scan %s: bump index progress: %v", scanID, err)
+		}
+	}
+
+	if err := s.db.MarkScanIndexed(ctx, scanID, indexed); err != nil {
+		log.Printf("scan %s: mark indexed: %v", scanID, err)
+	}
+	log.Printf("scan %s: auto-indexed %d chunks", scanID, indexed)
 }

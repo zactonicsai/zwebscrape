@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -23,9 +23,12 @@ type Config struct {
 	OllamaURL        string
 	OllamaModel      string
 	OllamaEmbedModel string
+	DatabaseURL      string
+	AutoIndex        bool
 }
 
 func loadConfig() Config {
+	autoIdx := strings.ToLower(getEnv("AUTO_INDEX", "true")) == "true"
 	return Config{
 		PlaywrightURL:    getEnv("PLAYWRIGHT_URL", "http://playwright:3000"),
 		S3Endpoint:       getEnv("S3_ENDPOINT", "http://localstack:4566"),
@@ -35,6 +38,8 @@ func loadConfig() Config {
 		OllamaURL:        getEnv("OLLAMA_URL", "http://ollama:11434"),
 		OllamaModel:      getEnv("OLLAMA_MODEL", "llama3.2"),
 		OllamaEmbedModel: getEnv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
+		DatabaseURL:      getEnv("DATABASE_URL", "postgres://scraper:scraper@postgres:5432/scraper?sslmode=disable"),
+		AutoIndex:        autoIdx,
 	}
 }
 
@@ -51,27 +56,30 @@ type Server struct {
 	storage *Storage
 	ai      *AI
 	scraper *Scraper
-
-	// In-memory job registry. Suitable for a simple demo;
-	// for production swap with a real DB.
-	mu   sync.RWMutex
-	jobs map[string]*ScrapeJob
+	db      *DB
 }
 
 func newServer(cfg Config) (*Server, error) {
-	storage, err := NewStorage(context.Background(), cfg)
+	ctx := context.Background()
+
+	db, err := NewDB(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	storage, err := NewStorage(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 	ai := NewAI(cfg)
-	scraper := NewScraper(cfg, storage)
+	scraper := NewScraper(cfg, storage, db, ai)
 
 	return &Server{
 		cfg:     cfg,
 		storage: storage,
 		ai:      ai,
 		scraper: scraper,
-		jobs:    make(map[string]*ScrapeJob),
+		db:      db,
 	}, nil
 }
 
@@ -81,7 +89,7 @@ func (s *Server) router() http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(5 * time.Minute))
+	r.Use(middleware.Timeout(10 * time.Minute))
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
@@ -96,7 +104,10 @@ func (s *Server) router() http.Handler {
 		r.Post("/scrape", s.handleScrape)
 		r.Get("/scrapes", s.handleListScrapes)
 		r.Get("/scrapes/{id}", s.handleGetScrape)
-		r.Get("/scrapes/{id}/page", s.handleGetPage) // ?key=...
+		r.Get("/scrapes/{id}/pages", s.handleListPages)
+		r.Get("/scrapes/{id}/files", s.handleListFiles)
+		r.Get("/scrapes/{id}/file", s.handleGetFile) // ?key=...
+		r.Get("/scrapes/{id}/page/{pageID}", s.handleGetPageDetail)
 		r.Post("/scrapes/{id}/index", s.handleIndexScrape)
 		r.Post("/query", s.handleQuery)
 	})
@@ -112,7 +123,7 @@ func main() {
 	}
 
 	addr := ":8080"
-	log.Printf("api listening on %s", addr)
+	log.Printf("api listening on %s (auto_index=%v)", addr, cfg.AutoIndex)
 	if err := http.ListenAndServe(addr, srv.router()); err != nil {
 		log.Fatal(err)
 	}

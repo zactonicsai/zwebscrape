@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// POST /api/scrape  { url, depth, format }
+// POST /api/scrape  { url, depth, format, click_buttons }
 func (s *Server) handleScrape(w http.ResponseWriter, r *http.Request) {
 	var req ScrapeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -47,87 +48,185 @@ func (s *Server) handleScrape(w http.ResponseWriter, r *http.Request) {
 		req.Depth = 0
 	}
 	if req.Depth > 5 {
-		req.Depth = 5 // safety cap
+		req.Depth = 5
 	}
 	if req.Format == "" {
-		req.Format = "text"
+		req.Format = "all"
 	}
 	switch req.Format {
-	case "text", "html", "screenshot":
+	case "all", "text", "html", "screenshot":
 	default:
-		writeErr(w, http.StatusBadRequest, "format must be text|html|screenshot")
+		writeErr(w, http.StatusBadRequest, "format must be all|text|html|screenshot")
 		return
 	}
 
-	now := time.Now().UTC()
-	job := &ScrapeJob{
-		ID:        uuid.NewString(),
-		SeedURL:   req.URL,
-		Depth:     req.Depth,
-		Format:    req.Format,
-		Status:    "pending",
-		CreatedAt: now,
-		UpdatedAt: now,
+	clickButtons := true
+	if req.ClickButtons != nil {
+		clickButtons = *req.ClickButtons
 	}
 
-	s.mu.Lock()
-	s.jobs[job.ID] = job
-	s.mu.Unlock()
+	now := time.Now().UTC()
+	scan := &Scan{
+		ID:           uuid.NewString(),
+		SeedURL:      req.URL,
+		Depth:        req.Depth,
+		Format:       req.Format,
+		ClickButtons: clickButtons,
+		Status:       "pending",
+		StartedAt:    now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
 
-	// Run async; the caller polls /api/scrapes/{id}
-	go func(jobID string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	if err := s.db.CreateScan(r.Context(), scan); err != nil {
+		writeErr(w, http.StatusInternalServerError, "create scan: "+err.Error())
+		return
+	}
+
+	go func(id string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-
-		s.mu.RLock()
-		j := s.jobs[jobID]
-		s.mu.RUnlock()
-		if j == nil {
+		fresh, err := s.db.GetScan(ctx, id)
+		if err != nil {
 			return
 		}
-		s.scraper.Run(ctx, j)
-	}(job.ID)
+		s.scraper.Run(ctx, fresh)
+	}(scan.ID)
 
-	writeJSON(w, http.StatusAccepted, job)
+	writeJSON(w, http.StatusAccepted, scan)
 }
 
 // GET /api/scrapes
 func (s *Server) handleListScrapes(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	out := make([]*ScrapeJob, 0, len(s.jobs))
-	for _, j := range s.jobs {
-		out = append(out, j)
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
 	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-// GET /api/scrapes/{id}
-func (s *Server) handleGetScrape(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	s.mu.RLock()
-	job, ok := s.jobs[id]
-	s.mu.RUnlock()
-	if !ok {
-		writeErr(w, http.StatusNotFound, "job not found")
+	scans, err := s.db.ListScans(r.Context(), limit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, job)
+	writeJSON(w, http.StatusOK, scans)
 }
 
-// GET /api/scrapes/{id}/page?key=...
-// Streams the stored object straight from S3 with its content-type.
-func (s *Server) handleGetPage(w http.ResponseWriter, r *http.Request) {
+// GET /api/scrapes/{id} — scan + pages
+func (s *Server) handleGetScrape(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	scan, err := s.db.GetScan(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "scan not found")
+		return
+	}
+	pages, err := s.db.ListPages(r.Context(), id)
+	if err == nil {
+		scan.Pages = pages
+	}
+	writeJSON(w, http.StatusOK, scan)
+}
+
+// GET /api/scrapes/{id}/pages — just the pages
+func (s *Server) handleListPages(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	pages, err := s.db.ListPages(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, pages)
+}
+
+// GET /api/scrapes/{id}/page/{pageID} — page + click states
+func (s *Server) handleGetPageDetail(w http.ResponseWriter, r *http.Request) {
+	pageID := chi.URLParam(r, "pageID")
+	page, err := s.db.GetPage(r.Context(), pageID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "page not found")
+		return
+	}
+	clicks, _ := s.db.ListClicksForPage(r.Context(), pageID)
+	page.Clicks = clicks
+	writeJSON(w, http.StatusOK, page)
+}
+
+// GET /api/scrapes/{id}/files — every S3 artefact for this scan, classified
+func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	pages, err := s.db.ListPages(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pageByID := map[string]Page{}
+	for _, p := range pages {
+		pageByID[p.ID] = p
+	}
+
+	clicks, _ := s.db.ListClicksForScan(r.Context(), id)
+
+	out := make([]FileEntry, 0)
+
+	for _, p := range pages {
+		if p.HTMLS3Key != "" {
+			out = append(out, FileEntry{
+				Key: p.HTMLS3Key, Size: p.HTMLBytes, ContentType: "text/html",
+				Kind: "page-html", URL: p.URL, PageID: p.ID,
+			})
+		}
+		if p.TextS3Key != "" {
+			out = append(out, FileEntry{
+				Key: p.TextS3Key, Size: p.TextBytes, ContentType: "text/plain",
+				Kind: "page-text", URL: p.URL, PageID: p.ID,
+			})
+		}
+		if p.ScreenshotS3Key != "" {
+			out = append(out, FileEntry{
+				Key: p.ScreenshotS3Key, Size: p.ScreenshotBytes, ContentType: "image/png",
+				Kind: "page-screenshot", URL: p.URL, PageID: p.ID,
+			})
+		}
+	}
+
+	for _, c := range clicks {
+		pg := pageByID[c.PageID]
+		if c.HTMLS3Key != "" {
+			out = append(out, FileEntry{
+				Key: c.HTMLS3Key, ContentType: "text/html",
+				Kind: "click-html", URL: pg.URL, Step: c.Step,
+				PageID: c.PageID, ClickID: c.ID,
+			})
+		}
+		if c.TextS3Key != "" {
+			out = append(out, FileEntry{
+				Key: c.TextS3Key, ContentType: "text/plain",
+				Kind: "click-text", URL: pg.URL, Step: c.Step,
+				PageID: c.PageID, ClickID: c.ID,
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scan_id": id,
+		"count":   len(out),
+		"files":   out,
+	})
+}
+
+// GET /api/scrapes/{id}/file?key=... — stream an S3 object
+// Allowed keys are scoped to scans/{id}/...
+func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	key := r.URL.Query().Get("key")
 	if key == "" {
 		writeErr(w, http.StatusBadRequest, "key is required")
 		return
 	}
-	// Make sure the key actually belongs to this job to prevent path tricks
-	if !strings.HasPrefix(key, fmt.Sprintf("jobs/%s/", id)) {
-		writeErr(w, http.StatusForbidden, "key does not belong to this job")
+	if !strings.HasPrefix(key, fmt.Sprintf("scans/%s/", id)) {
+		writeErr(w, http.StatusForbidden, "key does not belong to this scan")
 		return
 	}
 
@@ -140,67 +239,29 @@ func (s *Server) handleGetPage(w http.ResponseWriter, r *http.Request) {
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "private, max-age=60")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
 
-// POST /api/scrapes/{id}/index
-// Pulls every page's text from S3, chunks it, and indexes into ChromaDB.
+// POST /api/scrapes/{id}/index — manual re-index (auto-index already runs)
 func (s *Server) handleIndexScrape(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	s.mu.RLock()
-	job, ok := s.jobs[id]
-	s.mu.RUnlock()
-	if !ok {
-		writeErr(w, http.StatusNotFound, "job not found")
+	scan, err := s.db.GetScan(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "scan not found")
 		return
 	}
-	if job.Status != "done" {
-		writeErr(w, http.StatusConflict, "job not finished yet")
+	if scan.Status != "done" {
+		writeErr(w, http.StatusConflict, "scan not finished yet")
 		return
 	}
 
-	indexed := 0
-	for _, p := range job.Pages {
-		// Always read the .txt sibling so we index clean text regardless
-		// of what format the user asked for.
-		textKey := strings.TrimSuffix(p.S3Key, ".png")
-		textKey = strings.TrimSuffix(textKey, ".html")
-		if !strings.HasSuffix(textKey, ".txt") {
-			textKey = textKey + ".txt"
-		}
+	go s.scraper.autoIndex(context.Background(), id)
 
-		data, _, err := s.storage.Get(r.Context(), textKey)
-		if err != nil {
-			continue
-		}
-		text := string(data)
-		chunks := ChunkText(text, 1500)
-
-		for i, ch := range chunks {
-			docID := fmt.Sprintf("%s::%s::%d", job.ID, p.URL, i)
-			meta := map[string]string{
-				"job_id": job.ID,
-				"url":    p.URL,
-				"title":  p.Title,
-				"chunk":  fmt.Sprintf("%d", i),
-			}
-			if err := s.ai.IndexDoc(r.Context(), docID, ch, meta); err != nil {
-				writeErr(w, http.StatusBadGateway, "index error: "+err.Error())
-				return
-			}
-			indexed++
-		}
-	}
-
-	s.mu.Lock()
-	job.Indexed = true
-	job.UpdatedAt = time.Now().UTC()
-	s.mu.Unlock()
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"job_id":         job.ID,
-		"chunks_indexed": indexed,
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"scan_id": id,
+		"status":  "indexing",
 	})
 }
 

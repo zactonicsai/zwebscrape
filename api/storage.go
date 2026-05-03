@@ -12,10 +12,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// Storage wraps an S3 client that talks to LocalStack
+// Storage wraps an S3 client that talks to LocalStack (or real S3).
 type Storage struct {
 	client *s3.Client
 	bucket string
+}
+
+// S3Object is a minimal projection of an S3 object listing entry.
+type S3Object struct {
+	Key  string
+	Size int64
 }
 
 func NewStorage(ctx context.Context, cfg Config) (*Storage, error) {
@@ -36,7 +42,7 @@ func NewStorage(ctx context.Context, cfg Config) (*Storage, error) {
 
 	st := &Storage{client: client, bucket: cfg.S3Bucket}
 
-	// Best-effort bucket create; ignore errors if already exists
+	// Best-effort bucket create; ignore errors if it already exists
 	_, _ = client.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(cfg.S3Bucket),
 	})
@@ -44,7 +50,7 @@ func NewStorage(ctx context.Context, cfg Config) (*Storage, error) {
 	return st, nil
 }
 
-// Put writes bytes to a key with the given content-type
+// Put writes bytes to a key with the given content-type.
 func (s *Storage) Put(ctx context.Context, key string, data []byte, contentType string) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
@@ -58,7 +64,7 @@ func (s *Storage) Put(ctx context.Context, key string, data []byte, contentType 
 	return nil
 }
 
-// Get reads bytes for a key
+// Get reads bytes for a key, returning the content-type alongside.
 func (s *Storage) Get(ctx context.Context, key string) ([]byte, string, error) {
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
@@ -78,4 +84,35 @@ func (s *Storage) Get(ctx context.Context, key string) ([]byte, string, error) {
 		ct = *out.ContentType
 	}
 	return data, ct, nil
+}
+
+// List returns every object whose key starts with prefix.
+func (s *Storage) List(ctx context.Context, prefix string) ([]S3Object, error) {
+	out := make([]S3Object, 0)
+	var token *string
+	for {
+		resp, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(s.bucket),
+			Prefix:            aws.String(prefix),
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("s3 list %s: %w", prefix, err)
+		}
+		for _, o := range resp.Contents {
+			obj := S3Object{}
+			if o.Key != nil {
+				obj.Key = *o.Key
+			}
+			if o.Size != nil {
+				obj.Size = *o.Size
+			}
+			out = append(out, obj)
+		}
+		if resp.IsTruncated == nil || !*resp.IsTruncated {
+			break
+		}
+		token = resp.NextContinuationToken
+	}
+	return out, nil
 }

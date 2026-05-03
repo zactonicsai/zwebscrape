@@ -6,117 +6,131 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    .modal-bg { background: rgba(0,0,0,0.6); }
-    pre.scroll { max-height: 60vh; overflow:auto; }
+    .modal-bg { background: rgba(15,23,42,0.7); }
+    pre.scroll { max-height: 70vh; overflow:auto; }
+    .file-row:hover { background: #f8fafc; }
+    .truncate-mid { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26rem; }
+    table { font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen">
-  <div class="max-w-6xl mx-auto p-6 space-y-8">
+<div class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
 
-    <header class="flex items-center justify-between">
-      <div>
-        <h1 class="text-3xl font-bold">Web Scraper Console</h1>
-        <p class="text-slate-500">Crawl JS-rendered pages, store to S3, query with Ollama.</p>
-      </div>
-      <div id="apiStatus" class="text-sm px-3 py-1 rounded bg-slate-200">checking...</div>
-    </header>
-
-    <!-- Config form -->
-    <section class="bg-white shadow rounded-xl p-6">
-      <h2 class="text-xl font-semibold mb-4">New Scrape</h2>
-      <div class="grid md:grid-cols-4 gap-4">
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium mb-1">URL</label>
-          <input id="urlInput" type="url" placeholder="https://example.com"
-            class="w-full border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Depth (1–5)</label>
-          <input id="depthInput" type="number" min="0" max="5" value="1"
-            class="w-full border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Format</label>
-          <select id="formatInput"
-            class="w-full border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="text">Raw text</option>
-            <option value="html">Static HTML</option>
-            <option value="screenshot">Screenshot</option>
-          </select>
-        </div>
-      </div>
-      <div class="mt-4 flex gap-3">
-        <button id="startBtn"
-          class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium">
-          Start scrape
-        </button>
-        <button id="refreshBtn"
-          class="bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded font-medium">
-          Refresh
-        </button>
-        <span id="formMsg" class="text-sm text-slate-500 self-center"></span>
-      </div>
-    </section>
-
-    <!-- Jobs table -->
-    <section class="bg-white shadow rounded-xl p-6">
-      <h2 class="text-xl font-semibold mb-4">Scanned websites</h2>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead class="bg-slate-50 text-left">
-            <tr>
-              <th class="px-3 py-2">URL</th>
-              <th class="px-3 py-2">Depth</th>
-              <th class="px-3 py-2">Format</th>
-              <th class="px-3 py-2">Pages</th>
-              <th class="px-3 py-2">Status</th>
-              <th class="px-3 py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="jobsBody" class="divide-y divide-slate-100">
-            <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400">No scrapes yet.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- AI agent -->
-    <section class="bg-white shadow rounded-xl p-6">
-      <h2 class="text-xl font-semibold mb-4">AI agent</h2>
-      <p class="text-sm text-slate-500 mb-3">Ask a question. The agent retrieves the most relevant chunks from ChromaDB and summarizes with Ollama.</p>
-      <div class="flex gap-3">
-        <input id="promptInput" type="text" placeholder="e.g. What is this site about?"
-          class="flex-1 border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
-        <select id="jobScope" class="border border-slate-300 rounded px-3 py-2">
-          <option value="">All indexed jobs</option>
-        </select>
-        <button id="queryBtn"
-          class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-medium">
-          Ask
-        </button>
-      </div>
-      <div id="answerBox" class="mt-4 hidden bg-slate-50 border border-slate-200 rounded p-4">
-        <h3 class="font-semibold mb-2">Answer</h3>
-        <pre id="answerText" class="whitespace-pre-wrap text-sm"></pre>
-        <h4 class="font-semibold mt-3 mb-1">Sources</h4>
-        <ul id="answerSources" class="text-sm list-disc ml-5 text-blue-700"></ul>
-      </div>
-    </section>
-  </div>
-
-  <!-- View modal -->
- <div id="viewModal" class="hidden fixed inset-0 modal-bg flex items-center justify-center p-4 z-50">
-  <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
-    
-    <div class="flex justify-between items-center p-4 border-b shrink-0 bg-white">
-      <h3 id="modalTitle" class="font-semibold">Page</h3>
-      <button id="modalClose" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+  <header class="flex items-start justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl sm:text-3xl font-bold">Web Scraper Console</h1>
+      <p class="text-slate-500 text-sm sm:text-base">
+        Crawl JS-rendered pages, click every button, store HTML + text + screenshots to S3,
+        track everything in Postgres, ask Ollama questions over the result.
+      </p>
     </div>
+    <div id="apiStatus" class="text-sm px-3 py-1 rounded bg-slate-200">checking…</div>
+  </header>
 
-    <div id="modalBody" class="p-4 flex-1 overflow-y-auto">
-      loading...
+  <!-- Config form -->
+  <section class="bg-white shadow-sm rounded-xl p-5 border border-slate-200">
+    <h2 class="text-lg font-semibold mb-4">New scrape</h2>
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+      <div class="md:col-span-5">
+        <label class="block text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">URL</label>
+        <input id="urlInput" type="url" placeholder="https://example.com"
+          class="w-full border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
       </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">Depth</label>
+        <input id="depthInput" type="number" min="0" max="5" value="1"
+          class="w-full border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">Format</label>
+        <select id="formatInput" class="w-full border border-slate-300 rounded px-3 py-2">
+          <option value="all">HTML + text + screenshot</option>
+          <option value="html">HTML + text</option>
+          <option value="text">Text only</option>
+        </select>
+      </div>
+      <div class="md:col-span-3 flex items-end gap-2">
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+          <input id="clickButtonsInput" type="checkbox" checked class="rounded">
+          Click all buttons
+        </label>
+      </div>
+    </div>
+    <div class="mt-4 flex flex-wrap gap-3 items-center">
+      <button id="startBtn"
+        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium">
+        Start scrape
+      </button>
+      <button id="refreshBtn"
+        class="bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded font-medium">
+        Refresh
+      </button>
+      <span id="formMsg" class="text-sm text-slate-500"></span>
+    </div>
+  </section>
 
+  <!-- Scans table -->
+  <section class="bg-white shadow-sm rounded-xl p-5 border border-slate-200">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-semibold">Scans</h2>
+      <span id="scanCount" class="text-xs text-slate-500"></span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-3 py-2">Scan</th>
+            <th class="px-3 py-2">Status</th>
+            <th class="px-3 py-2 text-right">Pages</th>
+            <th class="px-3 py-2 text-right">Clicks</th>
+            <th class="px-3 py-2">Index</th>
+            <th class="px-3 py-2">Started</th>
+            <th class="px-3 py-2">Finished</th>
+            <th class="px-3 py-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="jobsBody" class="divide-y divide-slate-100">
+          <tr><td colspan="8" class="px-3 py-6 text-center text-slate-400">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- AI agent -->
+  <section class="bg-white shadow-sm rounded-xl p-5 border border-slate-200">
+    <h2 class="text-lg font-semibold mb-2">AI agent</h2>
+    <p class="text-sm text-slate-500 mb-3">Auto-indexed scans are ready immediately. Pick one or query across everything.</p>
+    <div class="flex flex-wrap gap-3">
+      <input id="promptInput" type="text" placeholder="e.g. What is this site about?"
+        class="flex-1 min-w-[16rem] border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      <select id="jobScope" class="border border-slate-300 rounded px-3 py-2">
+        <option value="">All indexed scans</option>
+      </select>
+      <button id="queryBtn"
+        class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-medium">
+        Ask
+      </button>
+    </div>
+    <div id="answerBox" class="mt-4 hidden bg-slate-50 border border-slate-200 rounded p-4">
+      <h3 class="font-semibold mb-2">Answer</h3>
+      <pre id="answerText" class="whitespace-pre-wrap text-sm"></pre>
+      <h4 class="font-semibold mt-3 mb-1">Sources</h4>
+      <ul id="answerSources" class="text-sm list-disc ml-5 text-blue-700"></ul>
+    </div>
+  </section>
+</div>
+
+<!-- Generic modal -->
+<div id="viewModal" class="hidden fixed inset-0 modal-bg flex items-center justify-center p-2 sm:p-4 z-50">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[95vh] flex flex-col">
+    <div class="flex justify-between items-center p-4 border-b">
+      <div class="min-w-0">
+        <h3 id="modalTitle" class="font-semibold truncate">Detail</h3>
+        <p id="modalSubtitle" class="text-xs text-slate-500 truncate"></p>
+      </div>
+      <button id="modalClose" class="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">&times;</button>
+    </div>
+    <div id="modalBody" class="p-4 overflow-y-auto">loading…</div>
   </div>
 </div>
 
@@ -137,6 +151,91 @@ async function api(path, opts = {}) {
   return data;
 }
 
+function escapeHtml(s) {
+  return String(s||'').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  try {
+    const d = new Date(s);
+    return d.toLocaleString(undefined, { hour12:false });
+  } catch { return s; }
+}
+
+function fmtDuration(start, end) {
+  if (!start) return '';
+  const ms = (new Date(end || Date.now())) - (new Date(start));
+  if (ms < 1000) return '<1s';
+  if (ms < 60000) return Math.round(ms/1000) + 's';
+  if (ms < 3600000) return Math.round(ms/60000) + 'm';
+  return (ms/3600000).toFixed(1) + 'h';
+}
+
+function fmtBytes(n) {
+  if (!n) return '0';
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  return (n/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function statusBadge(s) {
+  const cls = {
+    pending: 'bg-yellow-100 text-yellow-800',
+    running: 'bg-blue-100 text-blue-800 animate-pulse',
+    done:    'bg-emerald-100 text-emerald-800',
+    failed:  'bg-red-100 text-red-800',
+  }[s.status] || 'bg-slate-100 text-slate-800';
+  let label = s.status;
+  if (s.status === 'running')                 label = 'scraping';
+  else if (s.indexing_status === 'running')   label = 'indexing';
+  else if (s.indexing_status === 'failed')    label = 'index-failed';
+  return `<span class="px-2 py-0.5 rounded text-xs ${cls}">${label}</span>`;
+}
+
+function indexBadge(scan) {
+  // Live indexing
+  if (scan.indexing_status === 'running') {
+    return `<span class="px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-800 animate-pulse"
+              title="indexing in progress">
+              ${scan.chunks_indexed || 0} chunks…
+            </span>`;
+  }
+  if (scan.indexing_status === 'failed') {
+    return `<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">index failed</span>`;
+  }
+  if (scan.indexed_at) {
+    return `<span class="px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-800"
+              title="${escapeHtml(fmtDate(scan.indexed_at))}">
+              ${scan.chunks_indexed} chunks
+            </span>`;
+  }
+  if (scan.status === 'done') {
+    return `<span class="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">queued</span>`;
+  }
+  return `<span class="text-xs text-slate-400">—</span>`;
+}
+
+// What URL is the worker on right now? Returns a short HTML fragment or ''.
+function progressLine(scan) {
+  if (!scan.current_url) return '';
+  const verb = (scan.indexing_status === 'running') ? 'Indexing' : 'Scraping';
+  return `<div class="text-xs text-blue-700 mt-1 truncate-mid" title="${escapeHtml(scan.current_url)}">
+            <span class="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse mr-1"></span>
+            ${verb}: ${escapeHtml(scan.current_url)}
+          </div>`;
+}
+
+// Returns true if any scan is mid-flight (used to speed up polling).
+function anyInFlight(scans) {
+  return scans.some(s =>
+    s.status === 'pending' ||
+    s.status === 'running' ||
+    s.indexing_status === 'running'
+  );
+}
+
 async function checkHealth() {
   const el = document.getElementById('apiStatus');
   try {
@@ -149,30 +248,47 @@ async function checkHealth() {
   }
 }
 
-async function loadJobs() {
+async function loadScans() {
   try {
-    const jobs = await api('/api/scrapes');
-    jobs.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    const scans = await api('/api/scrapes');
     const tbody = document.getElementById('jobsBody');
-    if (!jobs.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="px-3 py-6 text-center text-slate-400">No scrapes yet.</td></tr>`;
+    document.getElementById('scanCount').textContent = `${scans.length} scan${scans.length===1?'':'s'}`;
+    if (!scans.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="px-3 py-6 text-center text-slate-400">No scrapes yet.</td></tr>`;
     } else {
-      tbody.innerHTML = jobs.map(j => `
-        <tr>
-          <td class="px-3 py-2 break-all">${escapeHtml(j.seed_url)}</td>
-          <td class="px-3 py-2">${j.depth}</td>
-          <td class="px-3 py-2">${j.format}</td>
-          <td class="px-3 py-2">${(j.pages||[]).length}</td>
+      tbody.innerHTML = scans.map(s => `
+        <tr class="hover:bg-slate-50">
           <td class="px-3 py-2">
-            <span class="px-2 py-0.5 rounded text-xs ${statusClass(j.status)}">${j.status}</span>
-            ${j.indexed ? '<span class="ml-1 px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-xs">indexed</span>' : ''}
+            <div class="font-medium text-slate-900 truncate-mid" title="${escapeHtml(s.seed_url)}">
+              ${escapeHtml(s.seed_url)}
+            </div>
+            <div class="text-xs text-slate-500">
+              <code>${s.id.slice(0,8)}</code> · depth ${s.depth} · ${s.format}${s.click_buttons ? ' · clicks on' : ''}
+            </div>
+            ${progressLine(s)}
           </td>
-          <td class="px-3 py-2 space-x-1">
-            <button class="bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded text-xs"
-              onclick="viewJob('${j.id}')">View</button>
-            <button class="bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded text-xs ${j.status!=='done'?'opacity-50 cursor-not-allowed':''}"
-              ${j.status!=='done'?'disabled':''}
-              onclick="indexJob('${j.id}')">AI agent</button>
+          <td class="px-3 py-2">
+            ${statusBadge(s)}
+            ${s.error ? `<div class="text-xs text-red-700 mt-1 truncate-mid" title="${escapeHtml(s.error)}">${escapeHtml(s.error)}</div>` : ''}
+          </td>
+          <td class="px-3 py-2 text-right">${s.page_count}</td>
+          <td class="px-3 py-2 text-right">${s.click_count}</td>
+          <td class="px-3 py-2">${indexBadge(s)}</td>
+          <td class="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">${fmtDate(s.started_at)}</td>
+          <td class="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
+            ${s.completed_at ? fmtDate(s.completed_at) : '—'}
+            ${s.completed_at ? `<div class="text-slate-400">(${fmtDuration(s.started_at, s.completed_at)})</div>` : ''}
+          </td>
+          <td class="px-3 py-2">
+            <div class="flex flex-wrap gap-1">
+              <button class="bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded text-xs"
+                onclick="viewScan('${s.id}')">Pages</button>
+              <button class="bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded text-xs"
+                onclick="viewFiles('${s.id}')">Files</button>
+              <button class="bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded text-xs ${s.status!=='done'?'opacity-50 cursor-not-allowed':''}"
+                ${s.status!=='done'?'disabled':''}
+                onclick="reindexScan('${s.id}')">Re-index</button>
+            </div>
           </td>
         </tr>
       `).join('');
@@ -180,94 +296,377 @@ async function loadJobs() {
     // Update job-scope dropdown for queries
     const sel = document.getElementById('jobScope');
     const current = sel.value;
-    sel.innerHTML = '<option value="">All indexed jobs</option>' +
-      jobs.filter(j => j.indexed).map(j =>
-        `<option value="${j.id}">${escapeHtml(j.seed_url)}</option>`
+    sel.innerHTML = '<option value="">All indexed scans</option>' +
+      scans.filter(j => j.indexed_at).map(j =>
+        `<option value="${j.id}">${escapeHtml(j.seed_url)} (${j.chunks_indexed})</option>`
       ).join('');
     sel.value = current;
+
+    // Adaptive polling: tick fast while anything is in motion
+    schedulePoll(anyInFlight(scans));
+
+    // If the Pages modal is open for a scan that's still running or indexing,
+    // refresh its contents in place so the user sees live additions.
+    if (watchedScanID) {
+      const ws = scans.find(x => x.id === watchedScanID);
+      if (ws && (ws.status === 'running' || ws.status === 'pending' || ws.indexing_status === 'running')) {
+        // Re-render the open Pages modal silently; no flicker because we
+        // only swap innerHTML of the body.
+        viewScan(watchedScanID, /*silent=*/true);
+      }
+    }
   } catch (e) {
     console.error(e);
+    document.getElementById('jobsBody').innerHTML =
+      `<tr><td colspan="8" class="px-3 py-4 text-red-600 text-sm">${escapeHtml(e.message)}</td></tr>`;
+    schedulePoll(true); // try again soon on error
   }
 }
 
-function statusClass(s) {
-  return {
-    pending: 'bg-yellow-100 text-yellow-800',
-    running: 'bg-blue-100 text-blue-800',
-    done:    'bg-emerald-100 text-emerald-800',
-    failed:  'bg-red-100 text-red-800',
-  }[s] || 'bg-slate-100 text-slate-800';
+// Poll cadence: 1.5s when anything is in motion, 5s otherwise.
+let pollTimer = null;
+function schedulePoll(busy) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(loadScans, busy ? 1500 : 5000);
 }
 
-function escapeHtml(s) {
-  return String(s||'').replace(/[&<>"']/g, c =>
-    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Tracks which scan, if any, currently has its Pages modal open.
+let watchedScanID = null;
+
+// Human label for a scan's current phase, used inside the Pages modal.
+function phaseLabel(scan) {
+  if (scan.status === 'pending') return 'queued';
+  if (scan.status === 'running') return 'scraping';
+  if (scan.status === 'failed')  return 'failed';
+  if (scan.indexing_status === 'running') return 'indexing';
+  if (scan.indexing_status === 'failed')  return 'index failed';
+  if (scan.indexed_at)           return 'done';
+  return scan.status;
 }
 
-async function viewJob(id) {
-  const modal = document.getElementById('viewModal');
-  const title = document.getElementById('modalTitle');
-  const body  = document.getElementById('modalBody');
-  modal.classList.remove('hidden');
-  title.textContent = 'Loading...';
-  body.innerHTML = 'loading...';
+function openModal(title, subtitle, body) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalSubtitle').textContent = subtitle || '';
+  document.getElementById('modalBody').innerHTML = body;
+  document.getElementById('viewModal').classList.remove('hidden');
+}
+function setModalBody(html) {
+  document.getElementById('modalBody').innerHTML = html;
+}
+function closeModal() {
+  document.getElementById('viewModal').classList.add('hidden');
+  watchedScanID = null;
+}
 
+// ============ Pages browser ============
+
+async function viewScan(id, silent = false) {
+  if (!silent) {
+    openModal('Loading…', '', 'loading…');
+  }
+  watchedScanID = id;
   try {
-    const job = await api(`/api/scrapes/${id}`);
-    title.textContent = `Job: ${job.seed_url} (${job.pages.length} pages)`;
-    if (!job.pages.length) {
-      body.innerHTML = '<p class="text-slate-500">No pages stored.</p>';
-      return;
-    }
-    body.innerHTML = `
-      <div class="mb-3">
-        <label class="text-sm font-medium">Page:</label>
-        <select id="pagePicker" class="border rounded px-2 py-1 ml-2">
-          ${job.pages.map((p,i) =>
-            `<option value="${i}">[d${p.depth}] ${escapeHtml(p.url)}</option>`).join('')}
-        </select>
+    const scan = await api(`/api/scrapes/${id}`);
+    const pages = scan.pages || [];
+
+    let body = `
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4 text-sm">
+        ${metricCard('Pages', scan.page_count)}
+        ${metricCard('Clicks captured', scan.click_count)}
+        ${metricCard('Indexed chunks', scan.chunks_indexed || 0)}
+        ${metricCard('Status', phaseLabel(scan))}
       </div>
-      <div id="pageContent" class="border rounded p-3 bg-slate-50 scroll text-sm"></div>
+      ${scan.current_url ? `<div class="text-xs text-blue-700 mb-3 truncate-mid" title="${escapeHtml(scan.current_url)}">
+        <span class="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse mr-1"></span>
+        ${(scan.indexing_status === 'running' ? 'Indexing' : 'Scraping')}: ${escapeHtml(scan.current_url)}
+      </div>` : ''}
+      <div class="text-xs text-slate-500 mb-3">
+        Scan ID: <code>${escapeHtml(scan.id)}</code>
+        · started ${escapeHtml(fmtDate(scan.started_at))}
+        ${scan.completed_at ? '· finished ' + escapeHtml(fmtDate(scan.completed_at)) : ''}
+        ${scan.indexed_at  ? '· indexed ' + escapeHtml(fmtDate(scan.indexed_at)) : ''}
+      </div>
     `;
-    document.getElementById('pagePicker').onchange = (e) =>
-      showPage(job, +e.target.value);
-    showPage(job, 0);
+
+    if (!pages.length) {
+      body += '<p class="text-slate-500">No pages stored yet.</p>';
+    } else {
+      body += `
+        <div class="overflow-x-auto border rounded">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-3 py-2">URL</th>
+                <th class="px-3 py-2 text-right">Depth</th>
+                <th class="px-3 py-2 text-right">Clicks</th>
+                <th class="px-3 py-2 text-right">HTML</th>
+                <th class="px-3 py-2 text-right">Text</th>
+                <th class="px-3 py-2 text-right">Shot</th>
+                <th class="px-3 py-2">Scraped</th>
+                <th class="px-3 py-2">View</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${pages.map(p => `
+                <tr class="hover:bg-slate-50">
+                  <td class="px-3 py-2">
+                    <div class="font-medium text-slate-900 truncate-mid" title="${escapeHtml(p.url)}">${escapeHtml(p.url)}</div>
+                    <div class="text-xs text-slate-500 truncate-mid">${escapeHtml(p.title || '')}</div>
+                  </td>
+                  <td class="px-3 py-2 text-right">${p.depth}</td>
+                  <td class="px-3 py-2 text-right">
+                    ${p.click_count ?
+                      `<button class="text-blue-700 hover:underline" onclick="viewPage('${id}','${p.id}')">${p.click_count}</button>` :
+                      '0'}
+                  </td>
+                  <td class="px-3 py-2 text-right text-xs text-slate-500">${fmtBytes(p.html_bytes)}</td>
+                  <td class="px-3 py-2 text-right text-xs text-slate-500">${fmtBytes(p.text_bytes)}</td>
+                  <td class="px-3 py-2 text-right text-xs text-slate-500">${fmtBytes(p.screenshot_bytes)}</td>
+                  <td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">${fmtDate(p.scraped_at)}</td>
+                  <td class="px-3 py-2">
+                    <div class="flex gap-1">
+                      ${p.html_s3_key ? `<button class="bg-pink-100 hover:bg-pink-200 text-pink-800 px-2 py-1 rounded text-xs"
+                        onclick="viewFile('${id}','${encodeURIComponent(p.html_s3_key)}','HTML — '+${JSON.stringify(p.url)})">HTML</button>` : ''}
+                      ${p.text_s3_key ? `<button class="bg-cyan-100 hover:bg-cyan-200 text-cyan-800 px-2 py-1 rounded text-xs"
+                        onclick="viewFile('${id}','${encodeURIComponent(p.text_s3_key)}','Text — '+${JSON.stringify(p.url)})">Text</button>` : ''}
+                      ${p.screenshot_s3_key ? `<button class="bg-amber-100 hover:bg-amber-200 text-amber-800 px-2 py-1 rounded text-xs"
+                        onclick="viewFile('${id}','${encodeURIComponent(p.screenshot_s3_key)}','Screenshot — '+${JSON.stringify(p.url)})">PNG</button>` : ''}
+                    </div>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    document.getElementById('modalTitle').textContent = `Scan: ${scan.seed_url}`;
+    document.getElementById('modalSubtitle').textContent = `${scan.id} · depth ${scan.depth} · ${scan.format}`;
+    setModalBody(body);
   } catch (e) {
-    body.innerHTML = `<p class="text-red-600">${escapeHtml(e.message)}</p>`;
+    setModalBody(`<p class="text-red-600 text-sm">${escapeHtml(e.message)}</p>`);
   }
 }
 
-async function showPage(job, idx) {
-  const p = job.pages[idx];
-  const target = document.getElementById('pageContent');
-  target.innerHTML = 'loading...';
-  const url = `${API}/api/scrapes/${job.id}/page?key=${encodeURIComponent(p.s3_key)}`;
+function metricCard(label, value) {
+  return `<div class="bg-slate-50 border border-slate-200 rounded p-3">
+    <div class="text-xs uppercase text-slate-500">${escapeHtml(label)}</div>
+    <div class="text-xl font-semibold mt-0.5">${escapeHtml(String(value))}</div>
+  </div>`;
+}
+
+// ============ Page detail (with click states) ============
+
+async function viewPage(scanID, pageID) {
+  openModal('Loading…', '', 'loading…');
   try {
+    const page = await api(`/api/scrapes/${scanID}/page/${pageID}`);
+    const clicks = page.clicks || [];
+
+    let body = `
+      <div class="text-sm mb-3">
+        <div><strong>URL:</strong> <a class="text-blue-700 underline break-all" href="${escapeHtml(page.url)}" target="_blank" rel="noopener">${escapeHtml(page.url)}</a></div>
+        <div class="text-slate-500"><strong>Title:</strong> ${escapeHtml(page.title || '(untitled)')}</div>
+        <div class="text-slate-500 text-xs">scraped ${escapeHtml(fmtDate(page.scraped_at))}</div>
+      </div>
+
+      <div class="flex flex-wrap gap-2 mb-4">
+        ${page.html_s3_key ? `<button class="bg-pink-100 hover:bg-pink-200 text-pink-800 px-3 py-1 rounded text-sm"
+          onclick="viewFile('${scanID}','${encodeURIComponent(page.html_s3_key)}','HTML — '+${JSON.stringify(page.url)})">View HTML</button>` : ''}
+        ${page.text_s3_key ? `<button class="bg-cyan-100 hover:bg-cyan-200 text-cyan-800 px-3 py-1 rounded text-sm"
+          onclick="viewFile('${scanID}','${encodeURIComponent(page.text_s3_key)}','Text — '+${JSON.stringify(page.url)})">View text</button>` : ''}
+        ${page.screenshot_s3_key ? `<button class="bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-1 rounded text-sm"
+          onclick="viewFile('${scanID}','${encodeURIComponent(page.screenshot_s3_key)}','Screenshot — '+${JSON.stringify(page.url)})">View screenshot</button>` : ''}
+      </div>
+
+      <h4 class="font-semibold text-slate-700 mb-2">Click states (${clicks.length})</h4>
+    `;
+
+    if (!clicks.length) {
+      body += `<p class="text-sm text-slate-500">No buttons were clicked on this page.</p>`;
+    } else {
+      body += `
+        <div class="overflow-x-auto border rounded">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-3 py-2">Step</th>
+                <th class="px-3 py-2">Selector</th>
+                <th class="px-3 py-2">Label</th>
+                <th class="px-3 py-2">Captured</th>
+                <th class="px-3 py-2">View</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${clicks.map(c => `
+                <tr>
+                  <td class="px-3 py-2">${c.step}</td>
+                  <td class="px-3 py-2"><code class="text-xs">${escapeHtml(c.selector)}</code></td>
+                  <td class="px-3 py-2 truncate-mid" title="${escapeHtml(c.label||'')}">${escapeHtml(c.label||'')}</td>
+                  <td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">${fmtDate(c.captured_at)}</td>
+                  <td class="px-3 py-2">
+                    <div class="flex gap-1">
+                      ${c.html_s3_key ? `<button class="bg-pink-100 hover:bg-pink-200 text-pink-800 px-2 py-1 rounded text-xs"
+                        onclick="viewFile('${scanID}','${encodeURIComponent(c.html_s3_key)}','Click '+${c.step}+' HTML — '+${JSON.stringify(c.label||'')})">HTML</button>` : ''}
+                      ${c.text_s3_key ? `<button class="bg-cyan-100 hover:bg-cyan-200 text-cyan-800 px-2 py-1 rounded text-xs"
+                        onclick="viewFile('${scanID}','${encodeURIComponent(c.text_s3_key)}','Click '+${c.step}+' text — '+${JSON.stringify(c.label||'')})">Text</button>` : ''}
+                    </div>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    document.getElementById('modalTitle').textContent = `Page: ${page.url}`;
+    document.getElementById('modalSubtitle').textContent = `${clicks.length} click states · ${fmtBytes(page.html_bytes)} HTML · ${fmtBytes(page.text_bytes)} text`;
+    setModalBody(body);
+  } catch (e) {
+    setModalBody(`<p class="text-red-600 text-sm">${escapeHtml(e.message)}</p>`);
+  }
+}
+
+// ============ File browser ============
+
+async function viewFiles(scanID) {
+  openModal('Loading…', '', 'loading…');
+  try {
+    const r = await api(`/api/scrapes/${scanID}/files`);
+    const files = r.files || [];
+
+    const groups = {
+      'page-html': [], 'page-text': [], 'page-screenshot': [],
+      'click-html': [], 'click-text': []
+    };
+    for (const f of files) {
+      if (groups[f.kind]) groups[f.kind].push(f);
+    }
+
+    const labels = {
+      'page-html': 'Page HTML',
+      'page-text': 'Page text',
+      'page-screenshot': 'Screenshots',
+      'click-html': 'Click-state HTML',
+      'click-text': 'Click-state text'
+    };
+
+    let body = `<div class="text-xs text-slate-500 mb-3">${files.length} S3 object${files.length===1?'':'s'} for scan <code>${scanID}</code></div>`;
+
+    for (const k of Object.keys(labels)) {
+      const arr = groups[k];
+      if (!arr.length) continue;
+      body += `
+        <div class="mb-4">
+          <h4 class="font-semibold text-slate-700 mb-2">${labels[k]} (${arr.length})</h4>
+          <div class="overflow-x-auto border rounded">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th class="px-3 py-2">S3 key</th>
+                  <th class="px-3 py-2">URL</th>
+                  ${k.startsWith('click') ? '<th class="px-3 py-2">Step</th>' : ''}
+                  <th class="px-3 py-2 text-right">Size</th>
+                  <th class="px-3 py-2">Open</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${arr.map(f => `
+                  <tr class="file-row">
+                    <td class="px-3 py-2"><code class="text-xs break-all">${escapeHtml(f.key)}</code></td>
+                    <td class="px-3 py-2 truncate-mid" title="${escapeHtml(f.url||'')}">${escapeHtml(f.url||'')}</td>
+                    ${k.startsWith('click') ? `<td class="px-3 py-2">${f.step}</td>` : ''}
+                    <td class="px-3 py-2 text-right text-xs text-slate-500">${fmtBytes(f.size)}</td>
+                    <td class="px-3 py-2">
+                      <button class="bg-blue-100 hover:bg-blue-200 text-blue-800 px-2 py-1 rounded text-xs"
+                        onclick='viewFile(${JSON.stringify(scanID)}, ${JSON.stringify(encodeURIComponent(f.key))}, ${JSON.stringify(f.key)})'>View</button>
+                    </td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+
+    if (!files.length) {
+      body += '<p class="text-slate-500 text-sm">No files yet — scan still running?</p>';
+    }
+
+    document.getElementById('modalTitle').textContent = `Files for scan ${scanID.slice(0,8)}`;
+    document.getElementById('modalSubtitle').textContent = `${files.length} S3 objects`;
+    setModalBody(body);
+  } catch (e) {
+    setModalBody(`<p class="text-red-600 text-sm">${escapeHtml(e.message)}</p>`);
+  }
+}
+
+// ============ File viewer (HTML / text / image) ============
+
+async function viewFile(scanID, encodedKey, label) {
+  openModal('Loading file…', '', 'loading…');
+  try {
+    const url = `${API}/api/scrapes/${scanID}/file?key=${encodedKey}`;
     const res = await fetch(url);
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(t || ('HTTP ' + res.status));
+    }
     const ct = res.headers.get('Content-Type') || '';
+    document.getElementById('modalTitle').textContent = label || 'File';
+    document.getElementById('modalSubtitle').textContent = ct;
+
     if (ct.startsWith('image/')) {
       const blob = await res.blob();
-      target.innerHTML = `<img src="${URL.createObjectURL(blob)}" class="max-w-full">`;
+      const u = URL.createObjectURL(blob);
+      setModalBody(`<img src="${u}" class="max-w-full mx-auto border rounded">`);
     } else if (ct.includes('html')) {
       const html = await res.text();
-      target.innerHTML = `<iframe sandbox srcdoc="${escapeHtml(html)}" class="w-full h-96 border"></iframe>`;
+      // Toggle: rendered iframe vs raw source view
+      setModalBody(`
+        <div class="flex gap-2 mb-3">
+          <button id="renderBtn" class="bg-pink-600 text-white px-3 py-1 rounded text-sm">Rendered</button>
+          <button id="sourceBtn" class="bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-sm">Source</button>
+          <span class="text-xs text-slate-500 self-center ml-auto">${(html.length/1024).toFixed(1)} KB</span>
+        </div>
+        <div id="htmlPane"></div>
+      `);
+      const pane = document.getElementById('htmlPane');
+      const showRendered = () => {
+        const iframe = document.createElement('iframe');
+        iframe.sandbox = '';
+        iframe.style.cssText = 'width:100%;height:70vh;border:1px solid #e2e8f0;border-radius:0.375rem;background:white;';
+        iframe.srcdoc = html;
+        pane.innerHTML = '';
+        pane.appendChild(iframe);
+      };
+      const showSource = () => {
+        pane.innerHTML = `<pre class="bg-slate-900 text-slate-100 p-3 rounded text-xs scroll">${escapeHtml(html)}</pre>`;
+      };
+      document.getElementById('renderBtn').onclick = () => {
+        document.getElementById('renderBtn').className = 'bg-pink-600 text-white px-3 py-1 rounded text-sm';
+        document.getElementById('sourceBtn').className = 'bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-sm';
+        showRendered();
+      };
+      document.getElementById('sourceBtn').onclick = () => {
+        document.getElementById('renderBtn').className = 'bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-sm';
+        document.getElementById('sourceBtn').className = 'bg-pink-600 text-white px-3 py-1 rounded text-sm';
+        showSource();
+      };
+      showRendered();
     } else {
       const text = await res.text();
-      target.innerHTML = `<pre class="whitespace-pre-wrap">${escapeHtml(text)}</pre>`;
+      setModalBody(`<pre class="whitespace-pre-wrap break-words text-sm bg-slate-50 p-3 rounded border scroll">${escapeHtml(text)}</pre>`);
     }
   } catch (e) {
-    target.innerHTML = `<p class="text-red-600">${escapeHtml(e.message)}</p>`;
+    setModalBody(`<p class="text-red-600 text-sm">${escapeHtml(e.message)}</p>`);
   }
 }
 
-async function indexJob(id) {
-  if (!confirm('Load this job into the AI agent context (ChromaDB)?')) return;
+async function reindexScan(id) {
+  if (!confirm('Re-index this scan into ChromaDB? (auto-index already runs after each scrape.)')) return;
   try {
-    document.getElementById('formMsg').textContent = 'indexing...';
-    const r = await api(`/api/scrapes/${id}/index`, { method: 'POST' });
-    document.getElementById('formMsg').textContent =
-      `Indexed ${r.chunks_indexed} chunks for job ${id.slice(0,8)}.`;
-    loadJobs();
+    await api(`/api/scrapes/${id}/index`, { method: 'POST' });
+    document.getElementById('formMsg').textContent = 'Re-indexing…';
+    setTimeout(loadScans, 1500);
   } catch (e) {
     document.getElementById('formMsg').textContent = 'index error: ' + e.message;
   }
@@ -277,16 +676,17 @@ async function startScrape() {
   const url = document.getElementById('urlInput').value.trim();
   const depth = parseInt(document.getElementById('depthInput').value, 10);
   const format = document.getElementById('formatInput').value;
+  const click_buttons = document.getElementById('clickButtonsInput').checked;
   const msg = document.getElementById('formMsg');
   if (!url) { msg.textContent = 'enter a URL'; return; }
-  msg.textContent = 'starting...';
+  msg.textContent = 'starting…';
   try {
     await api('/api/scrape', {
       method: 'POST',
-      body: JSON.stringify({ url, depth, format })
+      body: JSON.stringify({ url, depth, format, click_buttons })
     });
-    msg.textContent = 'queued';
-    loadJobs();
+    msg.textContent = 'queued — check the table below';
+    loadScans();
   } catch (e) {
     msg.textContent = 'error: ' + e.message;
   }
@@ -300,7 +700,7 @@ async function runQuery() {
   const ans = document.getElementById('answerText');
   const src = document.getElementById('answerSources');
   box.classList.remove('hidden');
-  ans.textContent = 'thinking...';
+  ans.textContent = 'thinking…';
   src.innerHTML = '';
   try {
     const r = await api('/api/query', {
@@ -315,15 +715,20 @@ async function runQuery() {
   }
 }
 
-document.getElementById('startBtn').onclick = startScrape;
-document.getElementById('refreshBtn').onclick = loadJobs;
-document.getElementById('queryBtn').onclick = runQuery;
-document.getElementById('modalClose').onclick = () =>
-  document.getElementById('viewModal').classList.add('hidden');
+document.getElementById('startBtn').onclick   = startScrape;
+document.getElementById('refreshBtn').onclick = loadScans;
+document.getElementById('queryBtn').onclick   = runQuery;
+document.getElementById('modalClose').onclick = closeModal;
+document.getElementById('viewModal').onclick = (e) => {
+  if (e.target.id === 'viewModal') closeModal();
+};
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
 
 checkHealth();
-loadJobs();
-setInterval(loadJobs, 4000);
+loadScans();
+// Subsequent polls are scheduled by loadScans() itself via schedulePoll().
 </script>
 </body>
 </html>
