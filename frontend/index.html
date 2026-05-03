@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Web Scraper Console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .modal-bg { background: rgba(0,0,0,0.6); }
+    pre.scroll { max-height: 60vh; overflow:auto; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+  <div class="max-w-6xl mx-auto p-6 space-y-8">
+
+    <header class="flex items-center justify-between">
+      <div>
+        <h1 class="text-3xl font-bold">Web Scraper Console</h1>
+        <p class="text-slate-500">Crawl JS-rendered pages, store to S3, query with Ollama.</p>
+      </div>
+      <div id="apiStatus" class="text-sm px-3 py-1 rounded bg-slate-200">checking...</div>
+    </header>
+
+    <!-- Config form -->
+    <section class="bg-white shadow rounded-xl p-6">
+      <h2 class="text-xl font-semibold mb-4">New Scrape</h2>
+      <div class="grid md:grid-cols-4 gap-4">
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium mb-1">URL</label>
+          <input id="urlInput" type="url" placeholder="https://example.com"
+            class="w-full border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Depth (1–5)</label>
+          <input id="depthInput" type="number" min="0" max="5" value="1"
+            class="w-full border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Format</label>
+          <select id="formatInput"
+            class="w-full border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="text">Raw text</option>
+            <option value="html">Static HTML</option>
+            <option value="screenshot">Screenshot</option>
+          </select>
+        </div>
+      </div>
+      <div class="mt-4 flex gap-3">
+        <button id="startBtn"
+          class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium">
+          Start scrape
+        </button>
+        <button id="refreshBtn"
+          class="bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded font-medium">
+          Refresh
+        </button>
+        <span id="formMsg" class="text-sm text-slate-500 self-center"></span>
+      </div>
+    </section>
+
+    <!-- Jobs table -->
+    <section class="bg-white shadow rounded-xl p-6">
+      <h2 class="text-xl font-semibold mb-4">Scanned websites</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-left">
+            <tr>
+              <th class="px-3 py-2">URL</th>
+              <th class="px-3 py-2">Depth</th>
+              <th class="px-3 py-2">Format</th>
+              <th class="px-3 py-2">Pages</th>
+              <th class="px-3 py-2">Status</th>
+              <th class="px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="jobsBody" class="divide-y divide-slate-100">
+            <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400">No scrapes yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- AI agent -->
+    <section class="bg-white shadow rounded-xl p-6">
+      <h2 class="text-xl font-semibold mb-4">AI agent</h2>
+      <p class="text-sm text-slate-500 mb-3">Ask a question. The agent retrieves the most relevant chunks from ChromaDB and summarizes with Ollama.</p>
+      <div class="flex gap-3">
+        <input id="promptInput" type="text" placeholder="e.g. What is this site about?"
+          class="flex-1 border border-slate-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        <select id="jobScope" class="border border-slate-300 rounded px-3 py-2">
+          <option value="">All indexed jobs</option>
+        </select>
+        <button id="queryBtn"
+          class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-medium">
+          Ask
+        </button>
+      </div>
+      <div id="answerBox" class="mt-4 hidden bg-slate-50 border border-slate-200 rounded p-4">
+        <h3 class="font-semibold mb-2">Answer</h3>
+        <pre id="answerText" class="whitespace-pre-wrap text-sm"></pre>
+        <h4 class="font-semibold mt-3 mb-1">Sources</h4>
+        <ul id="answerSources" class="text-sm list-disc ml-5 text-blue-700"></ul>
+      </div>
+    </section>
+  </div>
+
+  <!-- View modal -->
+  <div id="viewModal" class="hidden fixed inset-0 modal-bg flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl">
+      <div class="flex justify-between items-center p-4 border-b">
+        <h3 id="modalTitle" class="font-semibold">Page</h3>
+        <button id="modalClose" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+      </div>
+      <div id="modalBody" class="p-4">loading...</div>
+    </div>
+  </div>
+
+<script>
+const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://localhost:8080'
+  : `${window.location.protocol}//${window.location.hostname}:8080`;
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(opts.headers||{}) }
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+async function checkHealth() {
+  const el = document.getElementById('apiStatus');
+  try {
+    await api('/health');
+    el.textContent = 'API online';
+    el.className = 'text-sm px-3 py-1 rounded bg-emerald-100 text-emerald-800';
+  } catch (e) {
+    el.textContent = 'API offline';
+    el.className = 'text-sm px-3 py-1 rounded bg-red-100 text-red-800';
+  }
+}
+
+async function loadJobs() {
+  try {
+    const jobs = await api('/api/scrapes');
+    jobs.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    const tbody = document.getElementById('jobsBody');
+    if (!jobs.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="px-3 py-6 text-center text-slate-400">No scrapes yet.</td></tr>`;
+    } else {
+      tbody.innerHTML = jobs.map(j => `
+        <tr>
+          <td class="px-3 py-2 break-all">${escapeHtml(j.seed_url)}</td>
+          <td class="px-3 py-2">${j.depth}</td>
+          <td class="px-3 py-2">${j.format}</td>
+          <td class="px-3 py-2">${(j.pages||[]).length}</td>
+          <td class="px-3 py-2">
+            <span class="px-2 py-0.5 rounded text-xs ${statusClass(j.status)}">${j.status}</span>
+            ${j.indexed ? '<span class="ml-1 px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-xs">indexed</span>' : ''}
+          </td>
+          <td class="px-3 py-2 space-x-1">
+            <button class="bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded text-xs"
+              onclick="viewJob('${j.id}')">View</button>
+            <button class="bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded text-xs ${j.status!=='done'?'opacity-50 cursor-not-allowed':''}"
+              ${j.status!=='done'?'disabled':''}
+              onclick="indexJob('${j.id}')">AI agent</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+    // Update job-scope dropdown for queries
+    const sel = document.getElementById('jobScope');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All indexed jobs</option>' +
+      jobs.filter(j => j.indexed).map(j =>
+        `<option value="${j.id}">${escapeHtml(j.seed_url)}</option>`
+      ).join('');
+    sel.value = current;
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function statusClass(s) {
+  return {
+    pending: 'bg-yellow-100 text-yellow-800',
+    running: 'bg-blue-100 text-blue-800',
+    done:    'bg-emerald-100 text-emerald-800',
+    failed:  'bg-red-100 text-red-800',
+  }[s] || 'bg-slate-100 text-slate-800';
+}
+
+function escapeHtml(s) {
+  return String(s||'').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function viewJob(id) {
+  const modal = document.getElementById('viewModal');
+  const title = document.getElementById('modalTitle');
+  const body  = document.getElementById('modalBody');
+  modal.classList.remove('hidden');
+  title.textContent = 'Loading...';
+  body.innerHTML = 'loading...';
+
+  try {
+    const job = await api(`/api/scrapes/${id}`);
+    title.textContent = `Job: ${job.seed_url} (${job.pages.length} pages)`;
+    if (!job.pages.length) {
+      body.innerHTML = '<p class="text-slate-500">No pages stored.</p>';
+      return;
+    }
+    body.innerHTML = `
+      <div class="mb-3">
+        <label class="text-sm font-medium">Page:</label>
+        <select id="pagePicker" class="border rounded px-2 py-1 ml-2">
+          ${job.pages.map((p,i) =>
+            `<option value="${i}">[d${p.depth}] ${escapeHtml(p.url)}</option>`).join('')}
+        </select>
+      </div>
+      <div id="pageContent" class="border rounded p-3 bg-slate-50 scroll text-sm"></div>
+    `;
+    document.getElementById('pagePicker').onchange = (e) =>
+      showPage(job, +e.target.value);
+    showPage(job, 0);
+  } catch (e) {
+    body.innerHTML = `<p class="text-red-600">${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function showPage(job, idx) {
+  const p = job.pages[idx];
+  const target = document.getElementById('pageContent');
+  target.innerHTML = 'loading...';
+  const url = `${API}/api/scrapes/${job.id}/page?key=${encodeURIComponent(p.s3_key)}`;
+  try {
+    const res = await fetch(url);
+    const ct = res.headers.get('Content-Type') || '';
+    if (ct.startsWith('image/')) {
+      const blob = await res.blob();
+      target.innerHTML = `<img src="${URL.createObjectURL(blob)}" class="max-w-full">`;
+    } else if (ct.includes('html')) {
+      const html = await res.text();
+      target.innerHTML = `<iframe sandbox srcdoc="${escapeHtml(html)}" class="w-full h-96 border"></iframe>`;
+    } else {
+      const text = await res.text();
+      target.innerHTML = `<pre class="whitespace-pre-wrap">${escapeHtml(text)}</pre>`;
+    }
+  } catch (e) {
+    target.innerHTML = `<p class="text-red-600">${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function indexJob(id) {
+  if (!confirm('Load this job into the AI agent context (ChromaDB)?')) return;
+  try {
+    document.getElementById('formMsg').textContent = 'indexing...';
+    const r = await api(`/api/scrapes/${id}/index`, { method: 'POST' });
+    document.getElementById('formMsg').textContent =
+      `Indexed ${r.chunks_indexed} chunks for job ${id.slice(0,8)}.`;
+    loadJobs();
+  } catch (e) {
+    document.getElementById('formMsg').textContent = 'index error: ' + e.message;
+  }
+}
+
+async function startScrape() {
+  const url = document.getElementById('urlInput').value.trim();
+  const depth = parseInt(document.getElementById('depthInput').value, 10);
+  const format = document.getElementById('formatInput').value;
+  const msg = document.getElementById('formMsg');
+  if (!url) { msg.textContent = 'enter a URL'; return; }
+  msg.textContent = 'starting...';
+  try {
+    await api('/api/scrape', {
+      method: 'POST',
+      body: JSON.stringify({ url, depth, format })
+    });
+    msg.textContent = 'queued';
+    loadJobs();
+  } catch (e) {
+    msg.textContent = 'error: ' + e.message;
+  }
+}
+
+async function runQuery() {
+  const prompt = document.getElementById('promptInput').value.trim();
+  const job_id = document.getElementById('jobScope').value;
+  if (!prompt) return;
+  const box = document.getElementById('answerBox');
+  const ans = document.getElementById('answerText');
+  const src = document.getElementById('answerSources');
+  box.classList.remove('hidden');
+  ans.textContent = 'thinking...';
+  src.innerHTML = '';
+  try {
+    const r = await api('/api/query', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, job_id, top_k: 5 })
+    });
+    ans.textContent = r.answer || '(empty answer)';
+    src.innerHTML = (r.sources || []).map(s =>
+      `<li>${escapeHtml(s)}</li>`).join('');
+  } catch (e) {
+    ans.textContent = 'error: ' + e.message;
+  }
+}
+
+document.getElementById('startBtn').onclick = startScrape;
+document.getElementById('refreshBtn').onclick = loadJobs;
+document.getElementById('queryBtn').onclick = runQuery;
+document.getElementById('modalClose').onclick = () =>
+  document.getElementById('viewModal').classList.add('hidden');
+
+checkHealth();
+loadJobs();
+setInterval(loadJobs, 4000);
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "playwright-service",
+  "version": "1.0.0",
+  "description": "Playwright-based page renderer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "playwright": "^1.47.0"
+  }
+}

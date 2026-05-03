@@ -1,0 +1,102 @@
+services:
+  api:
+    build: ./api
+    container_name: scraper-api
+    ports:
+      - "8080:8080"
+    environment:
+      - PLAYWRIGHT_URL=http://playwright:3000
+      - S3_ENDPOINT=http://localstack:4566
+      - S3_BUCKET=scraper-data
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - CHROMA_URL=http://chromadb:8000
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2
+      - OLLAMA_EMBED_MODEL=nomic-embed-text
+    depends_on:
+      - playwright
+      - localstack
+      - chromadb
+      - ollama
+    networks:
+      - scraper-net
+
+  playwright:
+    build: ./playwright-service
+    container_name: scraper-playwright
+    ports:
+      - "3000:3000"
+    networks:
+      - scraper-net
+
+  frontend:
+    build: ./frontend
+    container_name: scraper-frontend
+    ports:
+      - "8000:80"
+    depends_on:
+      - api
+    networks:
+      - scraper-net
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: scraper-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - ./scripts/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh
+    networks:
+      - scraper-net
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: scraper-chromadb
+    ports:
+      - "8001:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    volumes:
+      - chroma-data:/data
+    networks:
+      - scraper-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: scraper-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - scraper-net
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: scraper-ollama-init
+    depends_on:
+      - ollama
+    entrypoint: >
+      sh -c "
+        sleep 5 &&
+        OLLAMA_HOST=http://ollama:11434 ollama pull llama3.2 &&
+        OLLAMA_HOST=http://ollama:11434 ollama pull nomic-embed-text
+      "
+    networks:
+      - scraper-net
+    restart: "no"
+
+volumes:
+  chroma-data:
+  ollama-data:
+
+networks:
+  scraper-net:
+    driver: bridge
