@@ -97,17 +97,20 @@
       position: fixed;
       top: 0;
       left: 0;
-      height: 100vh;
+      height: 100vh;            /* fallback for older browsers */
+      height: 100dvh;           /* respects mobile address-bar */
       width: 17rem;
       max-width: 85vw;
       background: #0f172a;
       color: #cbd5e1;
-      padding: 1.25rem;
-      overflow-y: auto;
+      padding: 0;               /* padding moves to children for proper flex sizing */
       z-index: 40;
       transform: translateX(-100%);
       transition: transform 0.25s ease;
-      -webkit-overflow-scrolling: touch;
+      display: flex;
+      flex-direction: column;
+      /* iOS safe-area awareness */
+      padding-top: env(safe-area-inset-top, 0px);
     }
     #sidebar.open { transform: translateX(0); }
     @media (min-width: 1024px) {
@@ -120,18 +123,35 @@
       body.menu-open { overflow: auto; } /* desktop: never lock */
     }
 
-    /* Sidebar header (with close button on mobile) */
+    /* Sidebar header — pinned at the top, never scrolls away */
     .sidebar-head {
+      flex: 0 0 auto;
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
       gap: 0.5rem;
-      margin-bottom: 1rem;
+      padding: 1.25rem 1.25rem 0.75rem 1.25rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: #0f172a;
     }
     .sidebar-head .close-btn { display: block; }
     @media (min-width: 1024px) {
       .sidebar-head .close-btn { display: none; }
     }
+
+    /* Scrollable list area inside the sidebar */
+    .sidebar-scroll {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 0.6rem 1.25rem calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
+      /* Custom scrollbar so it doesn't look broken on mobile */
+      scrollbar-width: thin;
+      scrollbar-color: #475569 transparent;
+    }
+    .sidebar-scroll::-webkit-scrollbar { width: 6px; }
+    .sidebar-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
 
     /* Collapsible nav groups */
     .nav-group { margin-bottom: 0.25rem; }
@@ -276,6 +296,8 @@
     </button>
   </div>
 
+  <div class="sidebar-scroll">
+
   <div class="nav-group" aria-expanded="true">
     <button class="nav-group-toggle" type="button">
       <span>Setup &amp; services</span>
@@ -338,6 +360,8 @@
       <li><a href="#troubleshooting">18. Troubleshooting</a></li>
     </ul>
   </div>
+
+  </div><!-- /.sidebar-scroll -->
 </nav>
 
 <main class="max-w-5xl mx-auto">
